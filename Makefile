@@ -4,40 +4,24 @@ lab                     ?= $(shell cat .mos-this-lab 2>/dev/null || echo 6)
 
 target_dir              := target
 mos_elf                 := $(target_dir)/mos
-user_disk               := $(target_dir)/fs.img
-empty_disk              := $(target_dir)/empty.img
 qemu_pts                := $(shell [ -f .qemu_log ] && grep -Eo '/dev/pts/[0-9]+' .qemu_log)
 link_script             := kernel.lds
 
 modules                 := lib init kern
 targets                 := $(mos_elf)
 
+# user_modules			:= user/bare user fs
+
 ifneq ($(prog),)
 dbg_elf                 := -ex "add-symbol-file $(prog)"
 endif
 
-lab-ge = $(shell [ "$$(echo $(lab)_ | cut -f1 -d_)" -ge $(1) ] && echo true)
-
-ifeq ($(call lab-ge,3),true)
-	user_modules    += user/bare
-endif
-
-ifeq ($(call lab-ge,4),true)
-	user_modules    += user
-endif
-
-ifeq ($(call lab-ge,5),true)
-	user_modules    += fs
-	targets         += fs-image
-endif
 
 objects                 := $(addsuffix /*.o, $(modules)) $(addsuffix /*.x, $(user_modules))
 modules                 += $(user_modules)
 
 CFLAGS                  += -DLAB=$(shell echo $(lab) | cut -f1 -d_)
 QEMU_FLAGS              += -machine virt -m 2G -nographic \
-						$(shell [ -f '$(user_disk)' ] && echo '-drive id=ide0,file=$(user_disk),if=ide,format=raw') \
-						$(shell [ -f '$(empty_disk)' ] && echo '-drive id=ide1,file=$(empty_disk),if=ide,format=raw') \
 						-no-reboot -monitor telnet:127.0.0.1:23334,server,nowait
 
 .PHONY: all test tools $(modules) clean run dbg_run dbg_pts dbg objdump fs-image clean-and-all connect
