@@ -27,159 +27,159 @@ uint32_t nextbno;   // next availiable block.
 struct Super super; // super block.
 
 enum {
-  BLOCK_FREE = 0,
-  BLOCK_BOOT = 1,
-  BLOCK_BMAP = 2,
-  BLOCK_SUPER = 3,
-  // 用于存储普通文件的内容
-  BLOCK_DATA = 4,
-  // 用于存储目录文件的内容（目录中的文件对应的File结构体）
-  BLOCK_FILE = 5,
-  BLOCK_INDEX = 6,
+    BLOCK_FREE = 0,
+    BLOCK_BOOT = 1,
+    BLOCK_BMAP = 2,
+    BLOCK_SUPER = 3,
+    // 用于存储普通文件的内容
+    BLOCK_DATA = 4,
+    // 用于存储目录文件的内容（目录中的文件对应的File结构体）
+    BLOCK_FILE = 5,
+    BLOCK_INDEX = 6,
 };
 
 // 在内存中表示硬盘镜像
 // 注意：磁盘块的类型只在内存中的struct Block结构中记录
 // 实际上的磁盘镜像中并没有该内容
 struct Block {
-  uint8_t data[BLOCK_SIZE];
-  uint32_t type;
+    uint8_t data[BLOCK_SIZE];
+    uint32_t type;
 } disk[NBLOCK];
 
 // reverse: mutually transform between little endian and big endian.
 void reverse(uint32_t *p) {
-  uint8_t *x = (uint8_t *)p;
-  uint32_t y = *(uint32_t *)x;
-  x[3] = y & 0xFF;
-  x[2] = (y >> 8) & 0xFF;
-  x[1] = (y >> 16) & 0xFF;
-  x[0] = (y >> 24) & 0xFF;
+    uint8_t *x = (uint8_t *)p;
+    uint32_t y = *(uint32_t *)x;
+    x[3] = y & 0xFF;
+    x[2] = (y >> 8) & 0xFF;
+    x[1] = (y >> 16) & 0xFF;
+    x[0] = (y >> 24) & 0xFF;
 }
 
 // reverse_block: reverse proper filed in a block.
 void reverse_block(struct Block *b) {
-  int i, j;
-  struct Super *s;
-  struct File *f, *ff;
-  uint32_t *u;
+    int i, j;
+    struct Super *s;
+    struct File *f, *ff;
+    uint32_t *u;
 
-  switch (b->type) {
-  case BLOCK_FREE:
-  case BLOCK_BOOT:
-    break; // do nothing.
-  case BLOCK_SUPER:
-    s = (struct Super *)b->data;
-    reverse(&s->s_magic);
-    reverse(&s->s_nblocks);
+    switch (b->type) {
+    case BLOCK_FREE:
+    case BLOCK_BOOT:
+        break; // do nothing.
+    case BLOCK_SUPER:
+        s = (struct Super *)b->data;
+        reverse(&s->s_magic);
+        reverse(&s->s_nblocks);
 
-    ff = &s->s_root;
-    reverse(&ff->f_size);
-    reverse(&ff->f_type);
-    for (i = 0; i < NDIRECT; ++i) {
-      reverse(&ff->f_direct[i]);
-    }
-    reverse(&ff->f_indirect);
-    break;
-  case BLOCK_FILE:
-    f = (struct File *)b->data;
-    for (i = 0; i < FILE2BLK; ++i) {
-      ff = f + i;
-      if (ff->f_name[0] == 0) {
-        break;
-      } else {
+        ff = &s->s_root;
         reverse(&ff->f_size);
         reverse(&ff->f_type);
-        for (j = 0; j < NDIRECT; ++j) {
-          reverse(&ff->f_direct[j]);
+        for (i = 0; i < NDIRECT; ++i) {
+            reverse(&ff->f_direct[i]);
         }
         reverse(&ff->f_indirect);
-      }
+        break;
+    case BLOCK_FILE:
+        f = (struct File *)b->data;
+        for (i = 0; i < FILE2BLK; ++i) {
+            ff = f + i;
+            if (ff->f_name[0] == 0) {
+                break;
+            } else {
+                reverse(&ff->f_size);
+                reverse(&ff->f_type);
+                for (j = 0; j < NDIRECT; ++j) {
+                    reverse(&ff->f_direct[j]);
+                }
+                reverse(&ff->f_indirect);
+            }
+        }
+        break;
+    case BLOCK_INDEX:
+    case BLOCK_BMAP:
+        u = (uint32_t *)b->data;
+        for (i = 0; i < BLOCK_SIZE / 4; ++i) {
+            reverse(u + i);
+        }
+        break;
     }
-    break;
-  case BLOCK_INDEX:
-  case BLOCK_BMAP:
-    u = (uint32_t *)b->data;
-    for (i = 0; i < BLOCK_SIZE / 4; ++i) {
-      reverse(u + i);
-    }
-    break;
-  }
 }
 
 // 初始化磁盘镜像：
 // 建立分区表、超级块、空闲位图
 void init_disk() {
-  int i, diff;
+    int i, diff;
 
-  // Step 1: Mark boot sector block.
-  disk[0].type = BLOCK_BOOT;
+    // Step 1: Mark boot sector block.
+    disk[0].type = BLOCK_BOOT;
 
-  // Step 2: Initialize boundary.
-  nbitblock = (NBLOCK + BLOCK_SIZE_BIT - 1) / BLOCK_SIZE_BIT;
-  nextbno = 2 + nbitblock;
+    // Step 2: Initialize boundary.
+    nbitblock = (NBLOCK + BLOCK_SIZE_BIT - 1) / BLOCK_SIZE_BIT;
+    nextbno = 2 + nbitblock;
 
-  // Step 2: Initialize bitmap blocks.
-  for (i = 0; i < nbitblock; ++i) {
-    disk[2 + i].type = BLOCK_BMAP;
-  }
-  for (i = 0; i < nbitblock; ++i) {
-    memset(disk[2 + i].data, 0xff, BLOCK_SIZE);
-  }
+    // Step 2: Initialize bitmap blocks.
+    for (i = 0; i < nbitblock; ++i) {
+        disk[2 + i].type = BLOCK_BMAP;
+    }
+    for (i = 0; i < nbitblock; ++i) {
+        memset(disk[2 + i].data, 0xff, BLOCK_SIZE);
+    }
 
-  // 若磁盘Block的数量并非BLOCK_SIZE_BIT的倍数，在最后一个位图块中将存在不对应任何磁盘Block的“多余部分”
-  // 多余部分需标记为占用（填充0）
-  if (NBLOCK != nbitblock * BLOCK_SIZE_BIT) {
-    diff = NBLOCK % BLOCK_SIZE_BIT / 8;
-    memset(disk[2 + (nbitblock - 1)].data + diff, 0x00, BLOCK_SIZE - diff);
-  }
+    // 若磁盘Block的数量并非BLOCK_SIZE_BIT的倍数，在最后一个位图块中将存在不对应任何磁盘Block的“多余部分”
+    // 多余部分需标记为占用（填充0）
+    if (NBLOCK != nbitblock * BLOCK_SIZE_BIT) {
+        diff = NBLOCK % BLOCK_SIZE_BIT / 8;
+        memset(disk[2 + (nbitblock - 1)].data + diff, 0x00, BLOCK_SIZE - diff);
+    }
 
-  // Step 3: Initialize super block.
-  disk[1].type = BLOCK_SUPER;
-  super.s_magic = FS_MAGIC;
-  super.s_nblocks = NBLOCK;
-  super.s_root.f_type = FTYPE_DIR;
-  strcpy(super.s_root.f_name, "/");
+    // Step 3: Initialize super block.
+    disk[1].type = BLOCK_SUPER;
+    super.s_magic = FS_MAGIC;
+    super.s_nblocks = NBLOCK;
+    super.s_root.f_type = FTYPE_DIR;
+    strcpy(super.s_root.f_name, "/");
 }
 
 // 获取下一个可用的磁盘块ID，并将该块的类型设置为`type`
 // 注意：磁盘块的类型只在内存中的struct Block结构中记录
 // 实际上的磁盘镜像中并没有该内容
 int next_block(int type) {
-  disk[nextbno].type = type;
-  return nextbno++;
+    disk[nextbno].type = type;
+    return nextbno++;
 }
 
 // 将磁盘块占用情况更新到占用位图中
 // 实际上，我们认为当前`nextbno`前的所有块都被占用
 void flush_bitmap() {
-  int i;
-  // update bitmap, mark all bit where corresponding block is used.
-  for (i = 0; i < nextbno; ++i) {
-    ((uint32_t *)disk[2 + i / BLOCK_SIZE_BIT]
-         .data)[(i % BLOCK_SIZE_BIT) / 32] &= ~(1 << (i % 32));
-  }
+    int i;
+    // update bitmap, mark all bit where corresponding block is used.
+    for (i = 0; i < nextbno; ++i) {
+        ((uint32_t *)disk[2 + i / BLOCK_SIZE_BIT]
+             .data)[(i % BLOCK_SIZE_BIT) / 32] &= ~(1 << (i % 32));
+    }
 }
 
 // 将内存中的硬盘镜像表示写入镜像文件
 void finish_fs(char *name) {
-  int fd, i;
+    int fd, i;
 
-  // Prepare super block.
-  memcpy(disk[1].data, &super, sizeof(super));
+    // Prepare super block.
+    memcpy(disk[1].data, &super, sizeof(super));
 
-  // Dump data in `disk` to target image file.
-  fd = open(name, O_RDWR | O_CREAT, 0666);
-  for (i = 0; i < 1024; ++i) {
+    // Dump data in `disk` to target image file.
+    fd = open(name, O_RDWR | O_CREAT, 0666);
+    for (i = 0; i < 1024; ++i) {
 #ifdef CONFIG_REVERSE_ENDIAN
-    reverse_block(disk + i);
+        reverse_block(disk + i);
 #endif
-    // 注意，只写入struct Block的data部分，type部分仅在内存中存在
-    ssize_t n = write(fd, disk[i].data, BLOCK_SIZE);
-    assert(n == BLOCK_SIZE);
-  }
+        // 注意，只写入struct Block的data部分，type部分仅在内存中存在
+        ssize_t n = write(fd, disk[i].data, BLOCK_SIZE);
+        assert(n == BLOCK_SIZE);
+    }
 
-  // Finish.
-  close(fd);
+    // Finish.
+    close(fd);
 }
 
 /*
@@ -205,17 +205,17 @@ void finish_fs(char *name) {
  *   - 间接块前NDIRECT个条目保留未使用（与文件结构设计相关）
  */
 void save_block_link(struct File *f, int nblk, int bno) {
-  assert(nblk < NINDIRECT); // if not, file is too large !
+    assert(nblk < NINDIRECT); // if not, file is too large !
 
-  if (nblk < NDIRECT) {
-    f->f_direct[nblk] = bno;
-  } else {
-    if (f->f_indirect == 0) {
-      // create new indirect block.
-      f->f_indirect = next_block(BLOCK_INDEX);
+    if (nblk < NDIRECT) {
+        f->f_direct[nblk] = bno;
+    } else {
+        if (f->f_indirect == 0) {
+            // create new indirect block.
+            f->f_indirect = next_block(BLOCK_INDEX);
+        }
+        ((uint32_t *)(disk[f->f_indirect].data))[nblk] = bno;
     }
-    ((uint32_t *)(disk[f->f_indirect].data))[nblk] = bno;
-  }
 }
 
 /*
@@ -247,10 +247,10 @@ void save_block_link(struct File *f, int nblk, int bno) {
  *   - 新块类型标记为BLOCK_FILE，用于存储文件结构体
  */
 int make_link_block(struct File *dirf, int nblk) {
-  int bno = next_block(BLOCK_FILE);
-  save_block_link(dirf, nblk, bno);
-  dirf->f_size += BLOCK_SIZE;
-  return bno;
+    int bno = next_block(BLOCK_FILE);
+    save_block_link(dirf, nblk, bno);
+    dirf->f_size += BLOCK_SIZE;
+    return bno;
 }
 
 /*
@@ -285,60 +285,60 @@ int make_link_block(struct File *dirf, int nblk) {
  */
 // Checked by DeepSeek-R1 20250508 1753
 struct File *create_file(struct File *dirf) {
-  int nblk = dirf->f_size / BLOCK_SIZE;
+    int nblk = dirf->f_size / BLOCK_SIZE;
 
-  // Step 1: Iterate through all existing blocks in the directory.
-  // 先查找已分配给目录的空间，看其中存储的文件信息有没有无效的
-  // 注意，无效文件可能有两种情况：
-  // 1. 该文件曾经存在，但已经被删除
-  // 2. 给目录“文件”分配了磁盘块，但该磁盘块中的该位置还从未存储过文件结构体
-  for (int i = 0; i < nblk; ++i) {
-    int bno; // the block number
-    // If the block number is in the range of direct pointers (NDIRECT), get
-    // the 'bno' directly from 'f_direct'. Otherwise, access the indirect
-    // block on 'disk' and get the 'bno' at the index.
-    /* Exercise 5.5: Your code here. (1/3) */
+    // Step 1: Iterate through all existing blocks in the directory.
+    // 先查找已分配给目录的空间，看其中存储的文件信息有没有无效的
+    // 注意，无效文件可能有两种情况：
+    // 1. 该文件曾经存在，但已经被删除
+    // 2. 给目录“文件”分配了磁盘块，但该磁盘块中的该位置还从未存储过文件结构体
+    for (int i = 0; i < nblk; ++i) {
+        int bno; // the block number
+        // If the block number is in the range of direct pointers (NDIRECT), get
+        // the 'bno' directly from 'f_direct'. Otherwise, access the indirect
+        // block on 'disk' and get the 'bno' at the index.
+        /* Exercise 5.5: Your code here. (1/3) */
 
-    if (i < NDIRECT) {
-      // 访问目录“文件”的直接指针部分，直接指针包含了存储目录“文件”内容的磁盘块编号
-      bno = dirf->f_direct[i];
-    } else {
+        if (i < NDIRECT) {
+            // 访问目录“文件”的直接指针部分，直接指针包含了存储目录“文件”内容的磁盘块编号
+            bno = dirf->f_direct[i];
+        } else {
 
-      // 访问目录“文件”的间接指针部分，间接指针包含一个磁盘块编号，
-      // 该磁盘块中包含了存储目录“文件”内容的磁盘块编号（一个编号4字节，一个磁盘块可存储1024个编号，但是前NDIRECT=10个不使用）
-      // 从间接指针对应的磁盘块中取得存储目录“文件”内容的磁盘块编号
-      // First NDIRECT uint32_t in the indirect are unused
-      bno = ((uint32_t *)disk[dirf->f_indirect].data)[i];
+            // 访问目录“文件”的间接指针部分，间接指针包含一个磁盘块编号，
+            // 该磁盘块中包含了存储目录“文件”内容的磁盘块编号（一个编号4字节，一个磁盘块可存储1024个编号，但是前NDIRECT=10个不使用）
+            // 从间接指针对应的磁盘块中取得存储目录“文件”内容的磁盘块编号
+            // First NDIRECT uint32_t in the indirect are unused
+            bno = ((uint32_t *)disk[dirf->f_indirect].data)[i];
+        }
+
+        // Get the directory block using the block number.
+        // 一个存储目录“文件”内容的磁盘块中，
+        // 可存储FILE2BLK = BLOCK_SIZE / FILE_STRUCT_SIZE
+        // = 4096 / 256 = 16个File结构体
+        struct File *blk = (struct File *)(disk[bno].data);
+
+        // Iterate through all 'File's in the directory block.
+        // 访问该磁盘块中存储的所有目录结构体
+        for (struct File *f = blk; f < blk + FILE2BLK; ++f) {
+            // If the first byte of the file name is null, the 'File' is unused.
+            // Return a pointer to the unused 'File'.
+            /* Exercise 5.5: Your code here. (2/3) */
+
+            // 若存在无效的文件，直接复用该位置放置新的文件
+            if (f->f_name[0] == '\0') {
+                return f;
+            }
+        }
     }
 
-    // Get the directory block using the block number.
-    // 一个存储目录“文件”内容的磁盘块中，
-    // 可存储FILE2BLK = BLOCK_SIZE / FILE_STRUCT_SIZE
-    // = 4096 / 256 = 16个File结构体
-    struct File *blk = (struct File *)(disk[bno].data);
+    // Step 2: If no unused file is found, allocate a new block using
+    // 'make_link_block' function and return a pointer to the new block on
+    // 'disk'.
+    /* Exercise 5.5: Your code here. (3/3) */
+    // 若在该目录的已有块中都找不到无效的文件，分配新的块放置该文件的File结构体
+    int bno = make_link_block(dirf, nblk);
 
-    // Iterate through all 'File's in the directory block.
-    // 访问该磁盘块中存储的所有目录结构体
-    for (struct File *f = blk; f < blk + FILE2BLK; ++f) {
-      // If the first byte of the file name is null, the 'File' is unused.
-      // Return a pointer to the unused 'File'.
-      /* Exercise 5.5: Your code here. (2/3) */
-
-      // 若存在无效的文件，直接复用该位置放置新的文件
-      if (f->f_name[0] == '\0') {
-        return f;
-      }
-    }
-  }
-
-  // Step 2: If no unused file is found, allocate a new block using
-  // 'make_link_block' function and return a pointer to the new block on
-  // 'disk'.
-  /* Exercise 5.5: Your code here. (3/3) */
-  // 若在该目录的已有块中都找不到无效的文件，分配新的块放置该文件的File结构体
-  int bno = make_link_block(dirf, nblk);
-
-  return (struct File *)(disk[bno].data);
+    return (struct File *)(disk[bno].data);
 }
 
 /*
@@ -368,36 +368,36 @@ struct File *create_file(struct File *dirf) {
  *   - 创建新文件时依赖disk数组初始零值标记空闲条目
  */
 void write_file(struct File *dirf, const char *path) {
-  int iblk = 0, r = 0, n = sizeof(disk[0].data);
-  struct File *target = create_file(dirf);
+    int iblk = 0, r = 0, n = sizeof(disk[0].data);
+    struct File *target = create_file(dirf);
 
-  /* in case `create_file` is't filled */
-  // 注意：在目前的`create_file`实现中，其不可能返回NULL
-  // 以下判断没有作用
-  if (target == NULL) {
-    return;
-  }
+    /* in case `create_file` is't filled */
+    // 注意：在目前的`create_file`实现中，其不可能返回NULL
+    // 以下判断没有作用
+    if (target == NULL) {
+        return;
+    }
 
-  int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDONLY);
 
-  // Get file name with no path prefix.
-  const char *fname = strrchr(path, '/');
-  if (fname) {
-    fname++;
-  } else {
-    fname = path;
-  }
-  strcpy(target->f_name, fname);
+    // Get file name with no path prefix.
+    const char *fname = strrchr(path, '/');
+    if (fname) {
+        fname++;
+    } else {
+        fname = path;
+    }
+    strcpy(target->f_name, fname);
 
-  target->f_size = lseek(fd, 0, SEEK_END);
-  target->f_type = FTYPE_REG;
+    target->f_size = lseek(fd, 0, SEEK_END);
+    target->f_type = FTYPE_REG;
 
-  // Start reading file.
-  lseek(fd, 0, SEEK_SET);
-  while ((r = read(fd, disk[nextbno].data, n)) > 0) {
-    save_block_link(target, iblk++, next_block(BLOCK_DATA));
-  }
-  close(fd); // Close file descriptor.
+    // Start reading file.
+    lseek(fd, 0, SEEK_SET);
+    while ((r = read(fd, disk[nextbno].data, n)) > 0) {
+        save_block_link(target, iblk++, next_block(BLOCK_DATA));
+    }
+    close(fd); // Close file descriptor.
 }
 
 /*
@@ -428,32 +428,32 @@ void write_file(struct File *dirf, const char *path) {
  *   - 动态构建子路径时使用malloc+拼接，需注意内存释放
  */
 void write_directory(struct File *dirf, char *path) {
-  DIR *dir = opendir(path);
-  if (dir == NULL) {
-    perror("opendir");
-    return;
-  }
-  struct File *pdir = create_file(dirf);
-  strncpy(pdir->f_name, basename(path), MAXNAMELEN - 1);
-  if (pdir->f_name[MAXNAMELEN - 1] != 0) {
-    fprintf(stderr, "file name is too long: %s\n", path);
-    // File already created, no way back from here.
-    exit(1);
-  }
-  pdir->f_type = FTYPE_DIR;
-  for (struct dirent *e; (e = readdir(dir)) != NULL;) {
-    if (strcmp(e->d_name, ".") != 0 && strcmp(e->d_name, "..") != 0) {
-      char *buf = malloc(strlen(path) + strlen(e->d_name) + 2);
-      sprintf(buf, "%s/%s", path, e->d_name);
-      if (e->d_type == DT_DIR) {
-        write_directory(pdir, buf);
-      } else {
-        write_file(pdir, buf);
-      }
-      free(buf);
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        perror("opendir");
+        return;
     }
-  }
-  closedir(dir);
+    struct File *pdir = create_file(dirf);
+    strncpy(pdir->f_name, basename(path), MAXNAMELEN - 1);
+    if (pdir->f_name[MAXNAMELEN - 1] != 0) {
+        fprintf(stderr, "file name is too long: %s\n", path);
+        // File already created, no way back from here.
+        exit(1);
+    }
+    pdir->f_type = FTYPE_DIR;
+    for (struct dirent *e; (e = readdir(dir)) != NULL;) {
+        if (strcmp(e->d_name, ".") != 0 && strcmp(e->d_name, "..") != 0) {
+            char *buf = malloc(strlen(path) + strlen(e->d_name) + 2);
+            sprintf(buf, "%s/%s", path, e->d_name);
+            if (e->d_type == DT_DIR) {
+                write_directory(pdir, buf);
+            } else {
+                write_file(pdir, buf);
+            }
+            free(buf);
+        }
+    }
+    closedir(dir);
 }
 
 /*
@@ -498,34 +498,35 @@ fsformat - 构建文件系统镜像工具
   - 文件内容按4KB块分配，支持直接/间接指针
 */
 int main(int argc, char **argv) {
-  static_assert(sizeof(struct File) == FILE_STRUCT_SIZE);
-  init_disk();
+    static_assert(sizeof(struct File) == FILE_STRUCT_SIZE);
+    init_disk();
 
-  if (argc < 3) {
-    fprintf(stderr, "Usage: fsformat <img-file> [files or directories]...\n");
-    exit(1);
-  }
-
-  for (int i = 2; i < argc; i++) {
-    char *name = argv[i];
-    struct stat stat_buf;
-    int r = stat(name, &stat_buf);
-    assert(r == 0);
-    if (S_ISDIR(stat_buf.st_mode)) {
-      printf("writing directory '%s' recursively into disk\n", name);
-      write_directory(&super.s_root, name);
-    } else if (S_ISREG(stat_buf.st_mode)) {
-      printf("writing regular file '%s' into disk\n", name);
-      write_file(&super.s_root, name);
-    } else {
-      fprintf(stderr, "'%s' has illegal file mode %o\n", name,
-              stat_buf.st_mode);
-      exit(2);
+    if (argc < 3) {
+        fprintf(stderr,
+                "Usage: fsformat <img-file> [files or directories]...\n");
+        exit(1);
     }
-  }
 
-  flush_bitmap();
-  finish_fs(argv[1]);
+    for (int i = 2; i < argc; i++) {
+        char *name = argv[i];
+        struct stat stat_buf;
+        int r = stat(name, &stat_buf);
+        assert(r == 0);
+        if (S_ISDIR(stat_buf.st_mode)) {
+            printf("writing directory '%s' recursively into disk\n", name);
+            write_directory(&super.s_root, name);
+        } else if (S_ISREG(stat_buf.st_mode)) {
+            printf("writing regular file '%s' into disk\n", name);
+            write_file(&super.s_root, name);
+        } else {
+            fprintf(stderr, "'%s' has illegal file mode %o\n", name,
+                    stat_buf.st_mode);
+            exit(2);
+        }
+    }
 
-  return 0;
+    flush_bitmap();
+    finish_fs(argv[1]);
+
+    return 0;
 }

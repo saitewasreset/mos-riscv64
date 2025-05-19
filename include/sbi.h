@@ -19,24 +19,24 @@
 #define SBI_ERR_IO -13
 
 struct sbiret {
-  reg_t error;
-  reg_t value;
+    reg_t error;
+    reg_t value;
 };
 
 static inline struct sbiret riscv_sbicall(u_reg_t extension_id,
                                           u_reg_t function_id, u_reg_t arg0,
                                           u_reg_t arg1, u_reg_t arg2,
                                           u_reg_t arg3) {
-  register u_reg_t a0 asm("a0") = (u_reg_t)(arg0);
-  register u_reg_t a1 asm("a1") = (u_reg_t)(arg1);
-  register u_reg_t a2 asm("a2") = (u_reg_t)(arg2);
-  register u_reg_t a3 asm("a3") = (u_reg_t)(arg3);
-  register u_reg_t a6 asm("a6") = (u_reg_t)(function_id);
-  register u_reg_t a7 asm("a7") = (u_reg_t)(extension_id);
-  asm volatile("ecall"
-               : "+r"(a0), "+r"(a1)
-               : "r"(a2), "r"(a3), "r"(a6), "r"(a7)
-               : "memory");
+    register u_reg_t a0 asm("a0") = (u_reg_t)(arg0);
+    register u_reg_t a1 asm("a1") = (u_reg_t)(arg1);
+    register u_reg_t a2 asm("a2") = (u_reg_t)(arg2);
+    register u_reg_t a3 asm("a3") = (u_reg_t)(arg3);
+    register u_reg_t a6 asm("a6") = (u_reg_t)(function_id);
+    register u_reg_t a7 asm("a7") = (u_reg_t)(extension_id);
+    asm volatile("ecall"
+                 : "+r"(a0), "+r"(a1)
+                 : "r"(a2), "r"(a3), "r"(a6), "r"(a7)
+                 : "memory");
 }
 
 // Debug Console Extension
@@ -50,20 +50,32 @@ static inline struct sbiret riscv_sbicall(u_reg_t extension_id,
 static inline struct sbiret sbi_debug_console_write(u_reg_t num_bytes,
                                                     u_reg_t base_addr_lo,
                                                     u_reg_t base_addr_hi) {
-  return riscv_sbicall(DEBUG_CONSOLE_EXTENSION_ID, DEBUG_CONSOLE_WRITE,
-                       num_bytes, base_addr_lo, base_addr_hi, 0);
+    return riscv_sbicall(DEBUG_CONSOLE_EXTENSION_ID, DEBUG_CONSOLE_WRITE,
+                         num_bytes, base_addr_lo, base_addr_hi, 0);
 }
 
 static inline struct sbiret sbi_debug_console_read(u_reg_t num_bytes,
                                                    u_reg_t base_addr_lo,
                                                    u_reg_t base_addr_hi) {
-  return riscv_sbicall(DEBUG_CONSOLE_EXTENSION_ID, DEBUG_CONSOLE_READ,
-                       num_bytes, base_addr_lo, base_addr_hi, 0);
+    return riscv_sbicall(DEBUG_CONSOLE_EXTENSION_ID, DEBUG_CONSOLE_READ,
+                         num_bytes, base_addr_lo, base_addr_hi, 0);
 }
 
 static inline struct sbiret sbi_debug_console_write_byte(uint8_t byte) {
-  return riscv_sbicall(DEBUG_CONSOLE_EXTENSION_ID, DEBUG_CONSOLE_WRITE_BYTE,
-                       byte, 0, 0, 0);
+    return riscv_sbicall(DEBUG_CONSOLE_EXTENSION_ID, DEBUG_CONSOLE_WRITE_BYTE,
+                         byte, 0, 0, 0);
+}
+
+// System Reset Extension
+
+#define SYSTEM_RESET_EXTENSION_ID 0x53525354
+
+#define SYSTEM_RESET_RESET 0
+
+static inline struct sbiret sbi_system_reset(uint32_t reset_type,
+                                             uint32_t reset_reason) {
+    return riscv_sbicall(SYSTEM_RESET_EXTENSION_ID, SYSTEM_RESET_RESET,
+                         reset_type, reset_reason, 0, 0);
 }
 
 #endif
