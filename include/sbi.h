@@ -72,6 +72,10 @@ static inline struct sbiret sbi_debug_console_write_byte(uint8_t byte) {
 
 #define SYSTEM_RESET_RESET 0
 
+#define RESET_TYPE_SHUTDOWN 0
+#define RESET_TYPE_COLD_REBOOT 1
+#define RESET_TYPE_WARM_REBOOT 2
+
 static inline struct sbiret sbi_system_reset(uint32_t reset_type,
                                              uint32_t reset_reason) {
     return riscv_sbicall(SYSTEM_RESET_EXTENSION_ID, SYSTEM_RESET_RESET,
