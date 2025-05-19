@@ -1,16 +1,13 @@
 #include <asm/asm.h>
+#include <machine.h>
+#include <printk.h>
 #include <sbi.h>
 #include <types.h>
 
 void riscv64_init(u_reg_t hart_id, void *dtb_address) {
-    // printk("init.c:\tmips_init() is called\n");
+    printk("init.c:\triscv64_init() is called\n");
 
-    char str[] = "For Super Earth!\n";
-
-    sbi_debug_console_write(sizeof(str), (u_reg_t)str, 0);
-
-    while (1) {
-    }
+    printk("My life for Super Earth!\n");
 
     // lab2:
     // mips_detect_memory(ram_low_size);
@@ -39,5 +36,5 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
 
     // lab3:
     // schedule(0);
-    // halt();
+    halt();
 }

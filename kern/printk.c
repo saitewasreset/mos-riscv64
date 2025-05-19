@@ -1,12 +1,12 @@
 #include <print.h>
 #include <printk.h>
+#include <sbi.h>
 #include <trap.h>
+#include <types.h>
 
 /* Lab 1 Key Code "outputk" */
 void outputk(void *data, const char *buf, size_t len) {
-    for (int i = 0; i < len; i++) {
-        printcharc(buf[i]);
-    }
+    sbi_debug_console_write(len, (u_reg_t)buf, 0);
 }
 /* End of Key Code "outputk" */
 
@@ -20,7 +20,7 @@ void printk(const char *fmt, ...) {
 /* End of Key Code "printk" */
 
 void print_tf(struct Trapframe *tf) {
-    for (int i = 0; i < sizeof(tf->regs) / sizeof(tf->regs[0]); i++) {
+    for (size_t i = 0; i < sizeof(tf->regs) / sizeof(tf->regs[0]); i++) {
         printk("$%2d = %08x\n", i, tf->regs[i]);
     }
     printk("HI  = %08x\n", tf->hi);
