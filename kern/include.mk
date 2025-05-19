@@ -1,1 +1,1 @@
-targets             := machine.o printk.o panic.o
+targets             := machine.o printk.o panic.o backtrace.o

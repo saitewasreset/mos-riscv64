@@ -1,3 +1,4 @@
+#include <mmu.h>
 #include <print.h>
 #include <printk.h>
 #include <sbi.h>
@@ -6,7 +7,7 @@
 
 /* Lab 1 Key Code "outputk" */
 void outputk(void *data, const char *buf, size_t len) {
-    sbi_debug_console_write(len, (u_reg_t)buf, 0);
+    sbi_debug_console_write(len, (u_reg_t)PADDR(buf), 0);
 }
 /* End of Key Code "outputk" */
 

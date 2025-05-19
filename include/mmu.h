@@ -5,39 +5,61 @@
  * Part 1.  Page table/directory defines.
  */
 
+#define HIGH_ADDR_IMM 0xFFFFFFC000000000
+#define LOW_ADDR_IMM 0x80000000
+#define LOAD_ADDR_IMM 0x80200000
+#define BASE_ADDR_IMM 0xFFFFFFC000200000
+#define KERNEL_END_ADDR_BEFORE_PAGING_IMM 0x80400000
+
+#define HIGH_ADDR_OFFSET ((HIGH_ADDR_IMM) - (LOW_ADDR_IMM))
+
 // 可用的 ASID 数量
 #define NASID 256
 // 页大小
 #define PAGE_SIZE 4096
+#define PAGE_SHIFT 12
 // 一个页表项映射的地址范围大小（4KB）
 #define PTMAP PAGE_SIZE
-// 一个页目录项映射的地址范围大小（4MB）
-#define PDMAP (4 * 1024 * 1024) // bytes mapped by a page directory entry
-// 获取虚拟页号/二级页表偏移量（需要再取低 10 位）需要右移的位数
-#define PGSHIFT 12
-// 获取一级页表偏移量需要右移的位数
-#define PDSHIFT 22 // log2(PDMAP)
-// 给定一个虚拟地址，返回其一级页表偏移量，10 位（0x03FF），高位为 0
-#define PDX(va) ((((u_long)(va)) >> PDSHIFT) & 0x03FF)
-// 给定一个虚拟地址，返回其二级页表偏移量，10 位（0x03FF），高位为 0
-#define PTX(va) ((((u_long)(va)) >> PGSHIFT) & 0x03FF)
-// 给定一个页表项（32 位=20 物理页号 +6 硬件标志 +6
-// 软件标志），返回其物理页的首地址（物理页号 20 位
-// + 12 位 0）
-#define PTE_ADDR(pte) (((u_long)(pte)) & ~0xFFF)
-// 给定一个页表项（32 位=20 物理页号 +6 硬件标志 +6 软件标志），返回硬件标志（6
-// 位）+ 软件标志（6 位），高 20 位为 0
-#define PTE_FLAGS(pte) (((u_long)(pte)) & 0xFFF)
 
-// Page number field of an address
-// 给定一个物理地址，返回其物理页号（20 位），高位为 0
-#define PPN(pa) (((u_long)(pa)) >> PGSHIFT)
+// 所有标志位：10位，2 软件标志 + 8 硬件标志
+#define FLAG_SHIFT 10
+
+// 27位掩码，用于获取有效的VPN、PPN
+#define VPN_MASK GENMASK(26, 0)
+
+// 一个一级页表项映射的地址范围大小（1GB）
+#define P1MAP (512 * 512 * 4 * 1024)
+// 一个二级页表项映射的地址范围大小（2MB）
+#define P2MAP (512 * 4 * 1024)
+// 一个三级页表项映射的地址范围大小（4KB）
+#define P3MAP (4 * 1024)
+
+// 获取一级页表偏移量（需要再取低 9 位）需要右移的位数
+#define P1SHIFT 30
+// 获取二级页表偏移量（需要再取低 9 位）需要右移的位数
+#define P2SHIFT 21
+// 获取三级页表偏移量（需要再取低 9 位）需要右移的位数
+#define P3SHIFT 12
+
+// 给定一个虚拟地址，返回其一级页表偏移量，9 位，高位为 0
+#define P1X(va) ((((u_reg_t)(va)) >> P1SHIFT) & GENMASK(8, 0))
+// 给定一个虚拟地址，返回其二级页表偏移量，9 位，高位为 0
+#define P2X(va) ((((u_reg_t)(va)) >> P2SHIFT) & GENMASK(8, 0))
+// 给定一个虚拟地址，返回其三级页表偏移量，9 位，高位为 0
+#define P3X(va) ((((u_reg_t)(va)) >> P3SHIFT) & GENMASK(8, 0))
+
+// 给定一个物理地址，返回其物理页号（27 位），高位为 0
+#define PPN(pa) (((u_reg_t)(pa)) >> PGSHIFT)
 // 给定一个虚拟地址，返回其虚拟页号（20 位），高位为 0
 #define VPN(va) (((u_long)(va)) >> PGSHIFT)
 
-// Page Table/Directory Entry flags
-
-#define PTE_HARDFLAG_SHIFT 6
+// 给定一个页表项（64位=10保留 + 44 物理页号 + 2 软件标志 + 8 硬件标志），
+// 返回其物理页的首地址（物理页号 44 位 + 12 位 0）
+#define PTE_ADDR(pte)                                                          \
+    ((((u_reg_t)(pte) >> FLAG_SHIFT) & GENMASK(43, 0)) << PAGE_SHIFT)
+// 给定一个页表项（64位=10保留 + 44 物理页号 + 2 软件标志 + 8 硬件标志），
+// 返回其标志位（2 软件标志 + 8 硬件标志）
+#define PTE_FLAGS(pte) (((u_reg_t)(pte)) & GENMASK(9, 0))
 
 // TLB EntryLo and Memory Page Table Entry Bit Structure Diagram.
 // entrylo.value == pte.value >> 6
@@ -60,48 +82,41 @@
  *             +-----------------------------------------------------------------+
  */
 
-// 下列 PTE_*宏用于从内存中的页表项（包含软件标志）获取相应位
-// 使用时，应将 Pde/Pte 类型的值与 PTE_*宏进行逻辑与操作
+// 硬件标志位：有效位，若为 0，所有匹配到该项的访存请求都会导致 TLB
+// 异常
+#define PTE_V 0x0001
 
-// Global bit. When the G bit in a TLB entry is set, that TLB entry will match
-// solely on the VPN field, regardless of whether the TLB entry’s ASID field
-// matches the value in EntryHi.
+// 硬件标志位：读权限位
+#define PTE_R 0x0002
+
+// 硬件标志位：写权限位
+#define PTE_W 0x0004
+
+// 硬件标志位：执行权限位
+#define PTE_X 0x0008
+
+#define PTE_NON_LEAF 0
+#define PTE_RO (PTE_R)
+#define PTE_RW (PTE_R | PTE_W)
+#define PTE_XO (PTE_X)
+#define PTE_RX (PTE_R | PTE_X)
+#define PTE_RWX (PTE_R | PTE_W | PTE_X)
+
+// 硬件标志位：用户态可访问
+#define PTE_USER 0x0010
+
 // 硬件标志位：全局位，当 TLB 表项中 G 被设置时，对于该项，TLB 匹配时将忽略
 // ASID，只依据虚拟页号匹配 相当于将该页映射到所有地址空间中
-#define PTE_G (0x0001 << PTE_HARDFLAG_SHIFT)
+#define PTE_GLOBAL 0x0020
 
-// Valid bit. If 0 any address matching this entry will cause a tlb miss
-// exception (TLBL/TLBS).
-// 硬件标志位：有效位，若为 0，所有匹配到该项的访存请求都会导致 TLB
-// 异常（读取：TLBL，写入：TLBS）
-#define PTE_V (0x0002 << PTE_HARDFLAG_SHIFT)
+// 硬件标志位：访问位，硬件会在访问时将其置 1。
+// 内核可以定期清除并检查此位，用于页面置换算法。
+#define PTE_ACCESS 0x0040
 
-// Dirty bit, but really a write-enable bit. 1 to allow writes, 0 and any store
-// using this translation will cause a tlb mod exception (TLB Mod).
-// 硬件标志位：脏位（允许写入位），若为 0，任何向该页的写入都会导致 Mod 异常
-#define PTE_D (0x0004 << PTE_HARDFLAG_SHIFT)
+// 硬件标志位：脏位，硬件会在写入时将其置 1。
+#define PTE_DIRTY 0x0080
 
-// Cache Coherency Attributes bit.
-#define PTE_C_CACHEABLE (0x0018 << PTE_HARDFLAG_SHIFT)
-#define PTE_C_UNCACHEABLE (0x0010 << PTE_HARDFLAG_SHIFT)
-
-// Copy On Write. Reserved for software, used by fork.
-// 软件标志位：写时复制，页表项第 0 位
-#define PTE_COW 0x0001
-
-// Shared memmory. Reserved for software, used by fork.
-// 软件标志位：共享页，页表项第 1 位
-#define PTE_LIBRARY 0x0002
-
-// 软件标志位：脏位，页表项第 2 位
-// #define PTE_DIRTY 0x0004 在fs/serv.h中定义
-
-// Memory segments (32-bit kernel mode addresses)
-// 用于获得各个内存区域起始地址的宏
-#define KUSEG 0x00000000U
-#define KSEG0 0x80000000U
-#define KSEG1 0xA0000000U
-#define KSEG2 0xC0000000U
+#define PTE_SOFTFLAG_SHIFT 8
 
 /*
  * Part 2.  Our conventions.
@@ -184,31 +199,23 @@ typedef u_long Pde;
 // 表示一个页表项，32 位，实际为 unsigned long
 typedef u_long Pte;
 
-// 将 kseg0 中的虚拟地址转化为物理地址
-// Precondition：传入 kseg0 范围内的虚拟地址 (0x8000 0000 -- 0xA000 0000)
-// Panic：若输入的虚拟地址位于用户空间（< ULIM = 0x8000 0000）
+// 将直接映射区域[0xFFFFFFC000000000, 0xFFFFFFC040000000)
+// 的虚拟地址转化为物理地址
+// Precondition：传入直接映射区域范围内的
 #define PADDR(kva)                                                             \
     ({                                                                         \
-        u_long _a = (u_long)(kva);                                             \
-        if (_a < ULIM)                                                         \
-            panic("PADDR called with invalid kva %08lx", _a);                  \
-        _a - ULIM;                                                             \
+        u_reg_t _a = (u_reg_t)(kva);                                           \
+        _a - HIGH_ADDR_OFFSET;                                                 \
     })
 
-// 将物理地址转化为 kseg0 中的虚拟地址
+// 将物理地址转化直接映射区域[0xFFFFFFC000000000, 0xFFFFFFC040000000)
+// 的虚拟地址
 // Precondition：
 // - 传入的地址在物理内存空间之内（小于总计物理内存容量）
-// - 传入的地址 < 512MB
+// - 传入的地址 < 1GB
 // Panics：
 // - 若输入的物理地址超出物理内存空间
-#define KADDR(pa)                                                              \
-    ({                                                                         \
-        u_long _ppn = PPN(pa);                                                 \
-        if (_ppn >= npage) {                                                   \
-            panic("KADDR called with invalid pa %08lx", (u_long)pa);           \
-        }                                                                      \
-        (pa) + ULIM;                                                           \
-    })
+#define KADDR(pa) ({ (pa) + HIGH_ADDR_OFFSET; })
 
 // 断言表达式 x 的结果为真
 // Panic：若表达式 x 的结果为假

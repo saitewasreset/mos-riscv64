@@ -8,14 +8,15 @@ OUTPUT_ARCH(riscv)
  */
 ENTRY(_start)
 
-BASE_ADDR = 0x80200000;
-KERNEL_END_ADDR = 0x80400000;
+LOAD_ADDR = 0x80200000;
+BASE_ADDR = 0xFFFFFFC000200000;
+KERNEL_END_ADDR = 0xFFFFFFC000400000;
 
 SECTIONS {
 	
 	. = BASE_ADDR;
 
-	.text : {
+	.text : AT(LOAD_ADDR) {
         PROVIDE(stext = .);
         *(.text.boot)
         *(.text)
@@ -24,13 +25,13 @@ SECTIONS {
 
 	. = ALIGN(4K);
 
-	.data : {
+	.data : AT(LOAD_ADDR) {
         PROVIDE(sdata = .);
         *(.data .data.*)
         PROVIDE(edata = .);
     }
 
-	.bss : {
+	.bss : AT(LOAD_ADDR) {
         .bss.stack = .;
         PROVIDE(sbss = .);
 
