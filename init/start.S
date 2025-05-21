@@ -6,6 +6,17 @@
 KERNEL_STACK:
     .skip 1 << 12 # 预留 4KiB 内核栈空间
 
+.section .super_info, "aw"
+.global DEBUG_TABLE_SIZE
+DEBUG_TABLE_SIZE:
+	.skip 16
+
+.section .symtab_pesudo_data, "aw"
+    .byte 0
+
+.section .strtab_pesudo_data, "aw"
+    .byte 0
+
 .section .text.boot
 EXPORT(_start)
 /* Lab 1 Key Code "enter-kernel" */

@@ -50,6 +50,16 @@ $(modules): tools
 $(mos_elf): $(modules) $(target_dir)
 	$(LD) $(LDFLAGS) -o $(mos_elf) -N -T $(link_script) $(objects)
 
+	tools/dump_section $(mos_elf) $(target_dir)/symtab.bin $(target_dir)/strtab.bin $(target_dir)/super_info.bin
+	$(CROSS_COMPILE)objcopy --update-section .load_symtab=$(target_dir)/symtab.bin $(mos_elf)
+	$(CROSS_COMPILE)objcopy --update-section .load_strtab=$(target_dir)/strtab.bin $(mos_elf)
+	$(CROSS_COMPILE)objcopy --update-section .super_info=$(target_dir)/super_info.bin $(mos_elf)
+
+	rm $(target_dir)/symtab.bin
+	rm $(target_dir)/strtab.bin
+	rm $(target_dir)/super_info.bin
+
+
 fs-image: $(target_dir) user
 	$(MAKE) --directory=fs image fs-files="$(addprefix ../, $(fs-files))"
 

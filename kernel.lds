@@ -10,7 +10,7 @@ ENTRY(_start)
 
 LOAD_ADDR = 0x80200000;
 BASE_ADDR = 0xFFFFFFC000200000;
-KERNEL_END_ADDR = 0xFFFFFFC000400000;
+KERNEL_END_ADDR = 0xFFFFFFC001000000;
 
 SECTIONS {
 	
@@ -25,13 +25,13 @@ SECTIONS {
 
 	. = ALIGN(4K);
 
-	.data : AT(LOAD_ADDR) {
+	.data : {
         PROVIDE(sdata = .);
         *(.data .data.*)
         PROVIDE(edata = .);
     }
 
-	.bss : AT(LOAD_ADDR) {
+	.bss : {
         .bss.stack = .;
         PROVIDE(sbss = .);
 
@@ -43,5 +43,32 @@ SECTIONS {
 
         PROVIDE(ebss = .);
     }
+
+    .super_info : {
+        _super_info_start = .;
+
+        *(.super_info)
+
+        _super_info_end = .;
+    }
+
+    .load_symtab : {
+        _symtab_start = .;
+
+        *(.symtab_pesudo_data)
+        . += 2 * 1024 * 1024 - (. - _symtab_start);
+
+        _symtab_end = .;
+    }
+
+    .load_strtab : {
+        _strtab_start = .;
+
+        *(.strtab_pesudo_data)
+        . += 2 * 1024 * 1024 - (. - _strtab_start);
+
+        _strtab_end = .;
+    }
+
     . = KERNEL_END_ADDR;
 }

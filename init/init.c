@@ -4,10 +4,14 @@
 #include <sbi.h>
 #include <types.h>
 
+void foo(int a, int b) { panic("Panic!"); }
+
 void riscv64_init(u_reg_t hart_id, void *dtb_address) {
     printk("init.c:\triscv64_init() is called\n");
 
     printk("My life for Super Earth!\n");
+
+    foo(1, 3);
 
     // lab2:
     // mips_detect_memory(ram_low_size);
