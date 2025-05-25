@@ -27,7 +27,7 @@ void print_tf(struct Trapframe *tf) {
     }
 
     printk("sstatus = %016lx\n", tf->sstatus);
-    printk("badvaddr = %016lx\n\n", tf->badvaddr);
+    printk("badvaddr = %016lx\n", tf->badvaddr);
     printk("scause = %016lx\n", tf->scause);
     printk("sepc = %016lx\n", tf->sepc);
 }

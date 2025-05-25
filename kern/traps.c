@@ -1,7 +1,11 @@
+#include "types.h"
+#include <backtrace.h>
 #include <env.h>
 #include <pmap.h>
 #include <printk.h>
 #include <trap.h>
+
+extern char _kernel_end[];
 
 extern void handle_int(void);
 extern void handle_tlb(void);
@@ -26,6 +30,14 @@ void (*interrupt_handlers[64])(void) = {
  */
 void do_reserved(struct Trapframe *tf) {
     print_tf(tf);
+
+    if ((tf->sepc) >= BASE_ADDR_IMM && (tf->sepc < (u_reg_t)_kernel_end)) {
+        printk("\nThis exception was raised in kernel code!\n\n");
+
+        print_backtrace(tf->sepc, tf->regs[8], tf->regs[2]);
+
+        printk("\n");
+    }
 
     if ((reg_t)tf->scause < 0) {
         panic("Unknown Interrupt Code %2ld", -((reg_t)tf->scause));

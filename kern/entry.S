@@ -2,7 +2,7 @@
 #include <stackframe.h>
 
 .macro BUILD_HANDLER exception handler
-BEGIN(handle_\exception, TF_SIZE + 16)
+BEGIN(handle_\exception, 16)
 	// BEGIN宏自动将sp-16，并存储了sp、fp
 	// 传递给异常处理函数的参数应当为现在的sp + 16
 
@@ -12,7 +12,7 @@ BEGIN(handle_\exception, TF_SIZE + 16)
 	
 	RESTORE_ALL
 	sret
-END(handle_\exception, TF_SIZE + 16)
+END(handle_\exception, 16)
 .endm
 
 // 设置异常处理函数（统一处理所有异常、中断）
@@ -70,6 +70,7 @@ exc_gen_entry:
 	slli	t0, t0, 3
 	add		t0, t0, t1
 
+	ld		t0, (t0)
 	jr		t0
 __ege_handle_int:
 	// 清除最高位的1
@@ -80,6 +81,7 @@ __ege_handle_int:
 	slli	t0, t0, 3
 	add		t0, t0, t1
 
+	ld		t0, (t0)
 	jr		t0
 
 BUILD_HANDLER reserved do_reserved

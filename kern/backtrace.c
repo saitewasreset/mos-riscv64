@@ -38,14 +38,22 @@ const char *lookup_function_name(size_t addr) {
     return NULL;
 }
 
-void print_backtrace(void) {
-    u_reg_t current_sp = 0;
-    u_reg_t current_fp = 0;
-    u_reg_t current_function = 0;
+void print_backtrace(u_reg_t pc, u_reg_t fp, u_reg_t sp) {
+    u_reg_t current_sp = sp;
+    u_reg_t current_fp = fp;
+    u_reg_t current_function = pc;
 
-    asm volatile("auipc %0, 0\n" : "=r"(current_function));
-    asm volatile("mv %0, sp" : "=r"(current_sp));
-    asm volatile("mv %0, s0" : "=r"(current_fp));
+    if (current_function == 0) {
+        asm volatile("auipc %0, 0\n" : "=r"(current_function));
+    }
+
+    if (current_sp == 0) {
+        asm volatile("mv %0, sp" : "=r"(current_sp));
+    }
+
+    if (current_fp == 0) {
+        asm volatile("mv %0, s0" : "=r"(current_fp));
+    }
 
     u_reg_t layer = 0;
 

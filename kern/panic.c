@@ -139,7 +139,7 @@ void _panic(const char *file, int line, const char *func, const char *fmt,
 
     printk("\n----- Backtrace -----\n");
 
-    print_backtrace();
+    print_backtrace(0, 0, 0);
 
     printk("\nHelldivers never die!\n");
 

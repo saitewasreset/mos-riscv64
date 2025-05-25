@@ -10,11 +10,10 @@ extern char _symtab_start[];
 extern char _strtab_start[];
 
 const char *lookup_function_name(size_t addr);
-void print_backtrace(void);
+void print_backtrace(u_reg_t pc, u_reg_t fp, u_reg_t sp);
 
 static inline bool is_valid_stack_addr(u_reg_t va) {
-    return (va >= KSTACKBOTTOM) &&
-           (va <= KSTACKTOP);
+    return (va >= KSTACKBOTTOM) && (va <= KSTACKTOP);
 }
 
 #endif
