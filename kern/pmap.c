@@ -182,7 +182,7 @@ void page_init(void) {
     /* Step 4: Mark the other memory as free. */
     /* Exercise 2.3: Your code here. (4/4) */
 
-    for (size_t i = used_page_count; i < npage; i++) {
+    for (size_t i = npage - 1; i >= used_page_count; i--) {
         pages[i].pp_ref = 0;
 
         LIST_INSERT_HEAD(&page_free_list, &pages[i], pp_link);
@@ -449,7 +449,7 @@ int page_insert(Pte *pgdir, uint16_t asid, struct Page *pp, u_reg_t va,
     if ((pte != NULL) && ((*pte & PTE_V) != 0)) {
         // 如果之前的映射和要创建的映射不同（具体地，不对应同一个 Page
         // 结构体），移除之前的映射
-        if (pa2page(*pte) != pp) {
+        if (pa2page(PTE_ADDR(*pte)) != pp) {
             page_remove(pgdir, asid, va);
         } else {
             // 若是同一个映射，只更新标志位
@@ -520,7 +520,7 @@ struct Page *page_lookup(Pte *pgdir, u_long va, Pte **ppte) {
 
     /* Step 2: Get the corresponding Page struct. */
     /* Hint: Use function `pa2page`, defined in include/pmap.h . */
-    pp = pa2page(*pte);
+    pp = pa2page(PTE_ADDR(*pte));
     if (ppte) {
         *ppte = pte;
     }
@@ -592,6 +592,8 @@ void page_remove(Pte *pgdir, u_int asid, u_long va) {
 /* End of Key Code "page_remove" */
 
 void physical_memory_manage_check(void) {
+    printk("physical_memory_manage_check: test begin\n");
+
     struct Page *pp, *pp0, *pp1, *pp2;
     struct Page_list fl;
     int *temp;
@@ -602,6 +604,10 @@ void physical_memory_manage_check(void) {
     assert(page_alloc(&pp1) == 0);
     assert(page_alloc(&pp2) == 0);
 
+    printk("physical_memory_manage_check: page allocated: pp0 = 0x%016lx pp1 = "
+           "0x%016lx pp2 = 0x%016lx\n",
+           (u_reg_t)page2pa(pp0), (u_reg_t)page2pa(pp1), (u_reg_t)page2pa(pp2));
+
     assert(pp0);
     assert(pp1 && pp1 != pp0);
     assert(pp2 && pp2 != pp1 && pp2 != pp0);
@@ -610,10 +616,17 @@ void physical_memory_manage_check(void) {
     fl = page_free_list;
     // now this page_free list must be empty!!!!
     LIST_INIT(&page_free_list);
+
     // should be no free memory
     assert(page_alloc(&pp) == -E_NO_MEM);
 
+    printk("physical_memory_manage_check: -E_NO_MEM test passed\n");
+
     temp = (int *)page2kva(pp0);
+
+    printk("physical_memory_manage_check: page2kva(pp0) = 0x%016lx\n",
+           (u_reg_t)temp);
+
     // write 1000 to pp0
     *temp = 1000;
     // free pp0
@@ -687,13 +700,18 @@ void page_check(void) {
 
     // should be able to allocate three pages
     pp0 = pp1 = pp2 = 0;
-    assert(page_alloc(&pp0) == 0);
-    assert(page_alloc(&pp1) == 0);
-    assert(page_alloc(&pp2) == 0);
+    assert_eq(page_alloc(&pp0), 0);
+    assert_eq(page_alloc(&pp1), 0);
+    assert_eq(page_alloc(&pp2), 0);
 
     assert(pp0);
     assert(pp1 && pp1 != pp0);
     assert(pp2 && pp2 != pp1 && pp2 != pp0);
+
+    printk("page_check: page allocated: pp = 0x%016lx pp0 = 0x%016lx pp1 = "
+           "0x%016lx pp2 = 0x%016lx\n",
+           (u_reg_t)page2pa(pp), (u_reg_t)page2pa(pp0), (u_reg_t)page2pa(pp1),
+           (u_reg_t)page2pa(pp2));
 
     // temporarily steal the rest of the free pages
     fl = page_free_list;
@@ -717,27 +735,33 @@ void page_check(void) {
 
     // free pp0, pp1 and try again: pp0, pp1 should be used for page table
     page_free(pp1);
-    assert(page_insert(boot_pgdir, 0, pp1, 0x0, 0) == 0);
-    assert(PTE_FLAGS(boot_pgdir[0]) == PTE_V);
-    assert(PTE_ADDR(boot_pgdir[0]) == page2pa(pp0));
-    assert(PTE_FLAGS(*(Pte *)page2kva(pp0)) == PTE_V);
-    assert(PTE_FLAGS(*(Pte *)page2kva(pp1)) == PTE_V);
+
+    // 注意：page_free将空闲页插入链表头部
+    // 因此，对于二级页表，将使用pp1，对于三级页表，将使用pp0
+    assert_eq(page_insert(boot_pgdir, 0, pp1, 0x0, 0), 0);
+    assert_eq(PTE_FLAGS(boot_pgdir[0]), PTE_V);
+    // 二级页表物理地址，应当为pp1的物理地址
+    assert_eq(PTE_ADDR(boot_pgdir[0]), page2pa(pp1));
+    assert_eq(PTE_FLAGS(*(Pte *)page2kva(pp0)), PTE_V);
+    assert_eq(PTE_FLAGS(*(Pte *)page2kva(pp1)), PTE_V);
 
     printk("va2pa(boot_pgdir, 0x0) is %x\n", va2pa(boot_pgdir, 0x0));
     printk("page2pa(pp1) is %x\n", page2pa(pp1));
     printk("pp1->pp_ref is %d\n", pp1->pp_ref);
 
-    assert((va2pa(boot_pgdir, 0x0) & (~0xFFFULL)) ==
-           (page2pa(pp1) & (~0xFFFULL)));
-    assert(pp1->pp_ref == 1);
+    assert_eq((va2pa(boot_pgdir, 0x0) & (~0xFFFULL)),
+              (page2pa(pp1) & (~0xFFFULL)));
+
+    // pp1被用于二级页表，同时被映射到0x0处
+    assert_eq(pp1->pp_ref, 2);
 
     // should be able to map pp2 at PAGE_SIZE because pp0, pp1 is already
     // allocated for page table
 
     // 三级页表已经分配
-    assert(page_insert(boot_pgdir, 0, pp2, PAGE_SIZE, 0) == 0);
-    assert((va2pa(boot_pgdir, PAGE_SIZE) & (~0xFFFULL)) ==
-           (page2pa(pp2) & (~0xFFFULL)));
+    assert_eq(page_insert(boot_pgdir, 0, pp2, PAGE_SIZE, 0), 0);
+    assert_eq((va2pa(boot_pgdir, PAGE_SIZE) & (~0xFFFULL)),
+              (page2pa(pp2) & (~0xFFFULL)));
     assert(pp2->pp_ref == 1);
 
     // should be no free memory
@@ -745,29 +769,30 @@ void page_check(void) {
 
     printk("start page_insert\n");
     // should be able to map pp2 at PAGE_SIZE because it's already there
-    assert(page_insert(boot_pgdir, 0, pp2, PAGE_SIZE, 0) == 0);
-    assert((va2pa(boot_pgdir, PAGE_SIZE) & (~0xFFFULL)) ==
-           (page2pa(pp2) & (~0xFFFULL)));
-    assert(pp2->pp_ref == 1);
+    assert_eq(page_insert(boot_pgdir, 0, pp2, PAGE_SIZE, 0), 0);
+    assert_eq((va2pa(boot_pgdir, PAGE_SIZE) & (~0xFFFULL)),
+              (page2pa(pp2) & (~0xFFFULL)));
+    assert_eq(pp2->pp_ref, 1);
 
     // pp2 should NOT be on the free list
     // could happen in ref counts are handled sloppily in page_insert
-    assert(page_alloc(&pp) == -E_NO_MEM);
+    assert_eq(page_alloc(&pp), -E_NO_MEM);
 
     // 没有新的可用页用于分配新的三级页表项，故映射到P2MAP应当失败，同理，映射到P1MAP也应当失败
     assert(page_insert(boot_pgdir, 0, pp0, P2MAP, 0) < 0);
     assert(page_insert(boot_pgdir, 0, pp0, P1MAP, 0) < 0);
 
     // insert pp1 at PAGE_SIZE (replacing pp2)
-    assert(page_insert(boot_pgdir, 0, pp1, PAGE_SIZE, 0) == 0);
+    assert_eq(page_insert(boot_pgdir, 0, pp1, PAGE_SIZE, 0), 0);
 
-    // should have pp1 at both 0 and PAGE_SIZE, pp2 nowhere, ...
-    assert((va2pa(boot_pgdir, 0x0) & (~0xFFFULL)) ==
-           (page2pa(pp1) & (~0xFFFULL)));
-    assert((va2pa(boot_pgdir, PAGE_SIZE) & (~0xFFFULL)) ==
-           (page2pa(pp1) & (~0xFFFULL)));
+    // pp1被映射到0、PAGE_SIZE，同时作为一页二级页表，引用计数为3
+    // pp2已被取消映射，引用计数为0
+    assert_eq((va2pa(boot_pgdir, 0x0) & (~0xFFFULL)),
+              (page2pa(pp1) & (~0xFFFULL)));
+    assert_eq((va2pa(boot_pgdir, PAGE_SIZE) & (~0xFFFULL)),
+              (page2pa(pp1) & (~0xFFFULL)));
     // ... and ref counts should reflect this
-    assert(pp1->pp_ref == 2);
+    assert(pp1->pp_ref == 3);
     printk("pp2->pp_ref %d\n", pp2->pp_ref);
     assert(pp2->pp_ref == 0);
     printk("end page_insert\n");
@@ -777,30 +802,42 @@ void page_check(void) {
 
     // unmapping pp1 at 0 should keep pp1 at PAGE_SIZE
     page_remove(boot_pgdir, 0, 0x0);
-    assert(va2pa(boot_pgdir, 0x0) == ~0ULL);
-    assert((va2pa(boot_pgdir, PAGE_SIZE) & (~0xFFFULL)) ==
-           (page2pa(pp1) & (~0xFFFULL)));
+    assert_eq(va2pa(boot_pgdir, 0x0), ~0ULL);
+    assert_eq((va2pa(boot_pgdir, PAGE_SIZE) & (~0xFFFULL)),
+              (page2pa(pp1) & (~0xFFFULL)));
+    assert(pp1->pp_ref == 2);
+    assert(pp2->pp_ref == 0);
+
+    // unmapping pp1 at PAGE_SIZE
+    page_remove(boot_pgdir, 0, PAGE_SIZE);
+    assert_eq(va2pa(boot_pgdir, 0x0), ~0ULL);
+    assert_eq(va2pa(boot_pgdir, PAGE_SIZE), ~0ULL);
     assert(pp1->pp_ref == 1);
     assert(pp2->pp_ref == 0);
 
-    // unmapping pp1 at PAGE_SIZE should free it
-    page_remove(boot_pgdir, 0, PAGE_SIZE);
-    assert(va2pa(boot_pgdir, 0x0) == ~0ULL);
-    assert(va2pa(boot_pgdir, PAGE_SIZE) == ~0ULL);
-    assert(pp1->pp_ref == 0);
-    assert(pp2->pp_ref == 0);
+    // forcibly take pp0（三级页表） back
+
+    Pte *p2_entry = (Pte *)P2KADDR(PTE_ADDR(boot_pgdir[0]));
+
+    assert_eq(PTE_ADDR(*p2_entry), page2pa(pp0));
+    *p2_entry = 0;
+
+    assert_eq(pp0->pp_ref, 1);
+    pp0->pp_ref = 0;
+
+    page_free(pp0);
 
     // so it should be returned by page_alloc
-    assert(page_alloc(&pp) == 0 && pp == pp1);
+    assert(page_alloc(&pp) == 0 && pp == pp0);
 
     // should be no free memory
     assert(page_alloc(&pp) == -E_NO_MEM);
 
-    // forcibly take pp0 back
-    assert(PTE_ADDR(boot_pgdir[0]) == page2pa(pp0));
+    // forcibly take pp1（二级页表） back
+    assert(PTE_ADDR(boot_pgdir[0]) == page2pa(pp1));
     boot_pgdir[0] = 0;
-    assert(pp0->pp_ref == 1);
-    pp0->pp_ref = 0;
+    assert(pp1->pp_ref == 1);
+    pp1->pp_ref = 0;
 
     // give free list back
     page_free_list = fl;

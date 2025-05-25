@@ -29,11 +29,6 @@ EXPORT(_start)
 	// 临时栈使用完毕，切换到内核栈
 	li sp, KSTACKTOP
 
-	// 计算栈顶地址，加载到sp寄存器
-	li t1, 1
-	slli t1, t1, 12
-	add sp, sp, t1
-
 	// 移除低地址恒等映射
 	
 	la t1, KERNEL_END_ADDR

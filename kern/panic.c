@@ -141,7 +141,7 @@ void _panic(const char *file, int line, const char *func, const char *fmt,
 
     print_backtrace();
 
-    printk("\nHelldivers nerver die!\n");
+    printk("\nHelldivers never die!\n");
 
     /*
     u_long sp, ra, badva, sr, cause, epc;

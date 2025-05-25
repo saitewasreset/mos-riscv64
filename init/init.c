@@ -17,6 +17,10 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
     riscv64_vm_init();
     page_init();
 
+    // physical_memory_manage_check();
+
+    page_check();
+
     printk("My life for Super Earth!\n");
     // lab2:
     // mips_detect_memory(ram_low_size);

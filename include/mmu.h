@@ -247,6 +247,18 @@ typedef u_reg_t Pte;
         }                                                                      \
     } while (0)
 
+// 断言表达式 x 和 y 的结果相等
+// Panic：若表达式 x == y 的结果为假
+#define assert_eq(x, y)                                                        \
+    do {                                                                       \
+        u_reg_t left = (x);                                                    \
+        u_reg_t right = (y);                                                   \
+        if (!(left == right)) {                                                \
+            panic("assertion %s == %s failed: left = %016lx right = %016lx",   \
+                  #x, #y, left, right);                                        \
+        }                                                                      \
+    } while (0)
+
 // 判断指针是否指向用户空间的地址
 // 若指向用户空间，返回该指针；否则，返回指向 ULIM（0x8000 0000）的指针
 // 注：typeof 是 GNU C 的拓展，用于表示某个变量的类型
