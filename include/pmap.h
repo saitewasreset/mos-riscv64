@@ -1,12 +1,13 @@
 #ifndef _PMAP_H_
 #define _PMAP_H_
 
+#include "bitops.h"
 #include <mmu.h>
 #include <printk.h>
 #include <queue.h>
 #include <types.h>
 
-extern Pde *cur_pgdir;
+extern Pte *cur_pgdir;
 
 LIST_HEAD(Page_list, Page);
 typedef LIST_ENTRY(Page) Page_LIST_entry_t;
@@ -28,12 +29,15 @@ extern struct Page *pages;
 extern struct Page_list page_free_list;
 
 // 返回物理页`pp`的物理页号
-static inline u_long page2ppn(struct Page *pp) { return pp - pages; }
+// 注意：DRAM从0x80000000（物理地址）开始映射
+static inline u_reg_t page2ppn(struct Page *pp) {
+    return (u_reg_t)(pp - pages) + PPN(0x80000000ULL);
+}
 
 // 返回物理页（Page 结构体的指针）`pp`的物理地址（低 12 位为
-// 0），故可将返回值直接与硬件标志位、软件标志位进行逻辑或得到合法的页表项
-static inline u_long page2pa(struct Page *pp) {
-    return page2ppn(pp) << PGSHIFT;
+// 0）
+static inline u_reg_t page2pa(struct Page *pp) {
+    return page2ppn(pp) << PAGE_SHIFT;
 }
 
 /*
@@ -44,22 +48,29 @@ static inline u_long page2pa(struct Page *pp) {
  * Precondition:
  * - 传入的物理地址`pa`必须小于可用的物理内存大小
  *
- * 注意：传入的物理地址的低12位将被忽略，故可直接传入合法的页表项
+ * 注意：传入的物理地址的低12位将被忽略
  */
-static inline struct Page *pa2page(u_long pa) {
+static inline struct Page *pa2page(u_reg_t pa) {
+
+    if (pa < LOW_ADDR_IMM) {
+        panic("pa2page called with invalid pa: 0x%016x", pa);
+    }
+
+    pa -= LOW_ADDR_IMM;
+
     if (PPN(pa) >= npage) {
-        panic("pa2page called with invalid pa: %x", pa);
+        panic("pa2page called with invalid pa: 0x%016x", pa);
     }
     return &pages[PPN(pa)];
 }
 
 // 返回物理页（Page 结构体的指针）`pp`的虚拟地址 (kseg0)
-static inline u_long page2kva(struct Page *pp) { return KADDR(page2pa(pp)); }
+static inline u_long page2kva(struct Page *pp) { return P2KADDR(page2pa(pp)); }
 
 /*
  * 概述：
  *
- * 查找页表，将虚拟地址`va`转化为物理地址，**返回对应物理页的首地址**
+ * 查找页表，将虚拟地址`va`转化为物理地址
  *
  * Precondition:
  *
@@ -67,31 +78,51 @@ static inline u_long page2kva(struct Page *pp) { return KADDR(page2pa(pp)); }
  *
  * Postcondition：
  *
- * - 若虚拟地址`va`有对应的有效页表项，返回`va`**映射到的物理页的首地址**
- * - 否则，返回0xFFFF FFFF
+ * - 若虚拟地址`va`有对应的有效页表项，返回`va`映射到的物理地址
+ * - 否则，返回0xFFFF FFFF FFFF FFFF
  *
  * 注意：传入的虚拟地址的低12位将被忽略，故可直接传入合法的页表项
  */
-static inline u_long va2pa(Pde *pgdir, u_long va) {
+static inline u_reg_t va2pa(Pte *pgdir, u_long va) {
     Pte *p;
 
-    // 在一级页表（页目录）中依据一级页表偏移量查找
-    Pde pgdirEntry = pgdir[PDX(va)];
-    if (!(pgdirEntry & PTE_V)) {
-        return ~0;
+    // 在一级页表中依据一级页表偏移量查找
+    Pte p1Entry = pgdir[P1X(va)];
+    if (!(p1Entry & PTE_V)) {
+        return ~0ULL;
+    }
+
+    if (PTE_IS_NON_LEAF(p1Entry) == 0) {
+        // 一级巨页
+        return PTE_ADDR(p1Entry) | (va & GENMASK(29, 0));
     }
 
     // 一级页表表项存储的是二级页表的**物理地址**
-    // 需转化为 kseg0 中的虚拟地址访问
-    // PTE_ADDR 返回页表项对应物理页的首地址（物理页号 20 位 + 12 位 0）
+    // 需转化为虚拟地址访问
+    // PTE_ADDR 返回页表项对应物理页的首地址（物理页号 44 位 + 12 位 0）
     // KADDR 将物理地址转化为 kseg0 中的虚拟地址
-    p = (Pte *)KADDR(PTE_ADDR(pgdirEntry));
+    p = (Pte *)P2KADDR(PTE_ADDR(p1Entry));
 
-    if (!(p[PTX(va)] & PTE_V)) {
-        return ~0;
+    Pte p2Entry = p[P2X(va)];
+
+    if (!(p2Entry & PTE_V)) {
+        return ~0ULL;
     }
 
-    return PTE_ADDR(p[PTX(va)]);
+    if (PTE_IS_NON_LEAF(p2Entry) == 0) {
+        // 二级巨页
+        return PTE_ADDR(p1Entry) | (va & GENMASK(20, 0));
+    }
+
+    p = (Pte *)P2KADDR(PTE_ADDR(p2Entry));
+
+    Pte p3Entry = p[P3X(va)];
+
+    if (!(p3Entry & PTE_V)) {
+        return ~0ULL;
+    }
+
+    return PTE_ADDR(p3Entry) | (va & GENMASK(11, 0));
 }
 
 /* 概述：
@@ -107,7 +138,7 @@ static inline u_long va2pa(Pde *pgdir, u_long va) {
  * - 设置全局变量 npage：最大可用的物理页数
  * - 输出日志：Memory size: %lu KiB, number of pages: %lu\n
  */
-void mips_detect_memory(u_int _memsize);
+void riscv64_detect_memory();
 
 /* 概述：
  *
@@ -124,8 +155,7 @@ void mips_detect_memory(u_int _memsize);
  * Pages.\n"（对应`Page`结构体数组顶端的虚拟地址（kseg0）
  * - 输出日志："pmap.c:\t mips vm init success\n"
  */
-void mips_vm_init(void);
-void mips_init(u_int argc, char **argv, char **penv, u_int ram_low_size);
+void riscv64_vm_init(void);
 
 /*
  * 概述：
@@ -261,7 +291,8 @@ void page_decref(struct Page *pp);
  * - 若无法分配页表，返回-E_NO_MEM
  *
  */
-int page_insert(Pde *pgdir, u_int asid, struct Page *pp, u_long va, u_int perm);
+int page_insert(Pte *pgdir, uint16_t asid, struct Page *pp, u_reg_t va,
+                uint32_t perm);
 
 /* 概述：
  *   查找虚拟地址`va`映射到的物理页（Page 结构体），返回指向该结构体的指针，
@@ -283,7 +314,7 @@ int page_insert(Pde *pgdir, u_int asid, struct Page *pp, u_long va, u_int perm);
  *   - 若`ppte` != NULL，将对应页表项的地址写入 ppte 指向的内存区域
  *
  */
-struct Page *page_lookup(Pde *pgdir, u_long va, Pte **ppte);
+struct Page *page_lookup(Pte *pgdir, u_long va, Pte **ppte);
 
 /* 概述：
  *   （含 TLB 操作）在虚拟地址空间`asid`中，移除虚拟地址`va`的映射`。
@@ -301,7 +332,7 @@ struct Page *page_lookup(Pde *pgdir, u_long va, Pte **ppte);
  * - `asid`必须是有效的地址空间标识符
  *
  */
-void page_remove(Pde *pgdir, u_int asid, u_long va);
+void page_remove(Pte *pgdir, u_int asid, u_long va);
 
 extern struct Page *pages;
 

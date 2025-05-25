@@ -1,11 +1,6 @@
 #include <asm/asm.h>
 #include <mmu.h>
 
-.section .bss.stack
-.global KERNEL_STACK
-KERNEL_STACK:
-    .skip 1 << 12 # 预留 4KiB 内核栈空间
-
 .section .super_info, "aw"
 .global DEBUG_TABLE_SIZE
 DEBUG_TABLE_SIZE:
@@ -32,7 +27,7 @@ EXPORT(_start)
 	jal enable_paging
 
 	// 临时栈使用完毕，切换到内核栈
-	la sp, KERNEL_STACK
+	li sp, KSTACKTOP
 
 	// 计算栈顶地址，加载到sp寄存器
 	li t1, 1

@@ -1,18 +1,23 @@
 #include <asm/asm.h>
 #include <machine.h>
+#include <pmap.h>
 #include <printk.h>
 #include <sbi.h>
+#include <trap.h>
 #include <types.h>
 
-void foo(int a, int b) { panic("Panic!"); }
+void riscv64_init(u_reg_t hart_id, void *dtb_address) __attribute__((noreturn));
 
 void riscv64_init(u_reg_t hart_id, void *dtb_address) {
     printk("init.c:\triscv64_init() is called\n");
 
+    exception_init();
+
+    riscv64_detect_memory();
+    riscv64_vm_init();
+    page_init();
+
     printk("My life for Super Earth!\n");
-
-    foo(1, 3);
-
     // lab2:
     // mips_detect_memory(ram_low_size);
     // mips_vm_init();

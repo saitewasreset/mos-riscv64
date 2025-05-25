@@ -45,7 +45,7 @@ struct Env {
     u_int env_asid;      // 该Env的ASID
     u_int env_parent_id; // 该Env父进程的**env_id**
     u_int env_status;    // 该Env的状态：ENV_FREE/ENV_RUNNABLE/ENV_NOT_RUNNABLE
-    Pde *env_pgdir;      // 该Env的页目录地址（虚拟地址）
+    Pte *env_pgdir;      // 该Env的页目录地址（虚拟地址）
     TAILQ_ENTRY(Env) env_sched_link; // 用于调度队列(`env_sched_list`)的指针域
     u_int env_pri;                   // 调度优先级
 

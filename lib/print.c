@@ -3,16 +3,17 @@
 
 /* forward declaration */
 static void print_char(fmt_callback_t, void *, char, int, int);
-static void print_str(fmt_callback_t, void *, const char *, int, int);
-static void print_num(fmt_callback_t, void *, unsigned long, int, int, int, int,
-                      char, int);
+void print_str(fmt_callback_t out, void *data, const char *s, size_t length,
+               int ladjust);
+void print_num(fmt_callback_t out, void *data, unsigned long u, int base,
+               int neg_flag, size_t length, int ladjust, char padc, int upcase);
 
 void vprintfmt(fmt_callback_t out, void *data, const char *fmt, va_list ap) {
     char c;
     const char *s;
     long num;
 
-    int width;
+    size_t width;
     int long_flag; // output is long (rather than int)
     int neg_flag;  // output is negative
     int ladjust;   // output is left-aligned
@@ -63,7 +64,7 @@ void vprintfmt(fmt_callback_t out, void *data, const char *fmt, va_list ap) {
         // now *fmt == first digit of width
         /* Exercise 1.4: Your code here. (6/8) */
 
-        width = parse_number(fmt, 10, &fmt);
+        width = (size_t)parse_number(fmt, 10, &fmt);
 
         /* check for long */
         // now *fmt == first token that is not a digit -> <specifier>
@@ -80,11 +81,12 @@ void vprintfmt(fmt_callback_t out, void *data, const char *fmt, va_list ap) {
         switch (*fmt) {
         case 'b':
             if (long_flag) {
-                num = va_arg(ap, unsigned long int);
+                num = (long)va_arg(ap, unsigned long int);
             } else {
-                num = va_arg(ap, unsigned int);
+                num = (int)va_arg(ap, unsigned int);
             }
-            print_num(out, data, num, 2, 0, width, ladjust, padc, 0);
+            print_num(out, data, (unsigned long)num, 2, 0, width, ladjust, padc,
+                      0);
             break;
 
         case 'd':
@@ -109,46 +111,51 @@ void vprintfmt(fmt_callback_t out, void *data, const char *fmt, va_list ap) {
                 neg_flag = 0;
             }
 
-            print_num(out, data, num, 10, neg_flag, width, ladjust, padc, 0);
+            print_num(out, data, (unsigned long)num, 10, neg_flag, width,
+                      ladjust, padc, 0);
 
             break;
 
         case 'o':
         case 'O':
             if (long_flag) {
-                num = va_arg(ap, unsigned long int);
+                num = (long)va_arg(ap, unsigned long int);
             } else {
-                num = va_arg(ap, unsigned int);
+                num = (int)va_arg(ap, unsigned int);
             }
-            print_num(out, data, num, 8, 0, width, ladjust, padc, 0);
+            print_num(out, data, (unsigned long)num, 8, 0, width, ladjust, padc,
+                      0);
             break;
 
         case 'u':
         case 'U':
             if (long_flag) {
-                num = va_arg(ap, unsigned long int);
+                num = (long)va_arg(ap, unsigned long int);
             } else {
-                num = va_arg(ap, unsigned int);
+                num = (int)va_arg(ap, unsigned int);
             }
-            print_num(out, data, num, 10, 0, width, ladjust, padc, 0);
+            print_num(out, data, (unsigned long)num, 10, 0, width, ladjust,
+                      padc, 0);
             break;
 
         case 'x':
             if (long_flag) {
-                num = va_arg(ap, unsigned long int);
+                num = (long)va_arg(ap, unsigned long int);
             } else {
-                num = va_arg(ap, unsigned int);
+                num = (int)va_arg(ap, unsigned int);
             }
-            print_num(out, data, num, 16, 0, width, ladjust, padc, 0);
+            print_num(out, data, (unsigned long)num, 16, 0, width, ladjust,
+                      padc, 0);
             break;
 
         case 'X':
             if (long_flag) {
-                num = va_arg(ap, unsigned long int);
+                num = (long)va_arg(ap, unsigned long int);
             } else {
-                num = va_arg(ap, unsigned int);
+                num = (int)va_arg(ap, unsigned int);
             }
-            print_num(out, data, num, 16, 0, width, ladjust, padc, 1);
+            print_num(out, data, (unsigned long)num, 16, 0, width, ladjust,
+                      padc, 1);
             break;
 
         case 'c':
@@ -158,7 +165,7 @@ void vprintfmt(fmt_callback_t out, void *data, const char *fmt, va_list ap) {
 
         case 's':
             s = (char *)va_arg(ap, char *);
-            print_str(out, data, s, width, ladjust);
+            print_str(out, data, s, (size_t)width, ladjust);
             break;
 
         case '\0':
@@ -195,10 +202,10 @@ void print_char(fmt_callback_t out, void *data, char c, int length,
     }
 }
 
-void print_str(fmt_callback_t out, void *data, const char *s, int length,
+void print_str(fmt_callback_t out, void *data, const char *s, size_t length,
                int ladjust) {
-    int i;
-    int len = 0;
+    size_t i;
+    size_t len = 0;
     const char *s1 = s;
     while (*s1++) {
         len++;
@@ -221,7 +228,8 @@ void print_str(fmt_callback_t out, void *data, const char *s, int length,
 }
 
 void print_num(fmt_callback_t out, void *data, unsigned long u, int base,
-               int neg_flag, int length, int ladjust, char padc, int upcase) {
+               int neg_flag, size_t length, int ladjust, char padc,
+               int upcase) {
     /* algorithm :
      *  1. prints the number from left to right in reverse form.
      *  2. fill the remaining spaces with padc if length is longer than
@@ -232,13 +240,13 @@ void print_num(fmt_callback_t out, void *data, unsigned long u, int base,
      *  4. otherwise we only reverse the actual string representing the num.
      */
 
-    int actualLength = 0;
+    size_t actualLength = 0;
     char buf[length + 70];
     char *p = buf;
-    int i;
+    size_t i;
 
     do {
-        int tmp = u % base;
+        int tmp = (int)(u % (unsigned long)base);
         if (tmp <= 9) {
             *p++ = '0' + tmp;
         } else if (upcase) {
@@ -246,7 +254,7 @@ void print_num(fmt_callback_t out, void *data, unsigned long u, int base,
         } else {
             *p++ = 'a' + tmp - 10;
         }
-        u /= base;
+        u /= (unsigned long)base;
     } while (u != 0);
 
     if (neg_flag) {
@@ -254,7 +262,7 @@ void print_num(fmt_callback_t out, void *data, unsigned long u, int base,
     }
 
     /* figure out actual length and adjust the maximum length */
-    actualLength = p - buf;
+    actualLength = (size_t)(p - buf);
     if (length < actualLength) {
         length = actualLength;
     }

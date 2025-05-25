@@ -39,4 +39,6 @@
 #define t5 x30  /* temporary register 5 */
 #define t6 x31  /* temporary register 6 */
 
+#define SSTATUS_SPP GENMASK(8, 8)
+
 #endif /* __ASM_RISCV64_REGDEF_H */

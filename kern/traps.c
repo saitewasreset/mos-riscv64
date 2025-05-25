@@ -9,31 +9,15 @@ extern void handle_sys(void);
 extern void handle_mod(void);
 extern void handle_reserved(void);
 
-/*
- * 部分异常的`ExcCode`：
- * | Value | Code      | What just happend?             |
- * | ----- | --------- | ------------------------------ |
- * | 0     | Int       | 中断                             |
- * | 1     | Mod       | 向TLB中标记为只读的页写入（Store）          |
- * | 2     | TLBL      | 从TLB中标记为无效的页读取（Load, Fetch）    |
- * | 3     | TLBS      | 向TLB中标记为无效的页写入（Store）          |
- * | 4/5   | AdEL/AdES | 地址错误：不满足对其要求、访问违例              |
- * | 8     | Sys       | 系统调用                           |
- * | 9     | Bp        | 断点（`break`指令）                  |
- * | 10    | RI        | 非法指令                           |
- * | 12    | Ov        | 算数运算溢出（算数指令的trapping变体，如`add`）
- */
+extern void set_exception_handler(void *exception_handler);
+extern void exc_gen_entry(void);
 
-// int arr[5] = {[2 ... 3] = 1}是GNU C拓展语法，等效于：
-// arr[2] = 1; arr[3] = 1;
-void (*exception_handlers[32])(void) = {
-    [0 ... 31] = handle_reserved,
-    [0] = handle_int,
-    [2 ... 3] = handle_tlb,
-#if !defined(LAB) || LAB >= 4
-    [1] = handle_mod,
-    [8] = handle_sys,
-#endif
+void (*exception_handlers[64])(void) = {
+    [0 ... 63] = handle_reserved,
+};
+
+void (*interrupt_handlers[64])(void) = {
+    [0 ... 63] = handle_reserved,
 };
 
 /* Overview:
@@ -42,5 +26,12 @@ void (*exception_handlers[32])(void) = {
  */
 void do_reserved(struct Trapframe *tf) {
     print_tf(tf);
-    panic("Unknown ExcCode %2d", (tf->cp0_cause >> 2) & 0x1f);
+
+    if ((reg_t)tf->scause < 0) {
+        panic("Unknown Interrupt Code %2ld", -((reg_t)tf->scause));
+    } else {
+        panic("Unknown Exception Code %2ld", (reg_t)tf->scause);
+    }
 }
+
+void exception_init() { set_exception_handler((void *)exc_gen_entry); }

@@ -1,30 +1,9 @@
+#include "mmu.h"
+#include "types.h"
 #include <bitops.h>
 #include <env.h>
 #include <pmap.h>
 
-/* 概述：
- *
- * 使 ASID 对应的虚拟地址空间中映射虚拟地址 `va` 的 TLB
- * 条目失效。
- *
- * 具体的，该页和相邻页的映射都将从 TLB 中移除。
- *
- * Preconditon:
- * - `va` 不一定是页对齐的。
- *
- * Postconditon:
- *
- * 如果 TLB 中存在特定条目，则通过将对应的 TLB 条目写为零来使其失效；
- *
- * 否则，不会发生任何操作。
- *
- * 由于 4Kc TLB 条目的结构，与该虚拟地址对应的页 **以及** 相邻页的映射将被移除。
- */
-void tlb_invalidate(u_int asid, u_long va) {
-    // GENMASK(PGSHIFT, 0) 生成 [0, 12] 位（**共 13 位**）为 1 的掩码
-    // va & ~GENMASK(PGSHIFT, 0) 得到 VPN2
-    tlb_out((va & ~GENMASK(PGSHIFT, 0)) | (asid & (NASID - 1)));
-}
 
 /*
  * 概述：
@@ -51,12 +30,12 @@ void tlb_invalidate(u_int asid, u_long va) {
  * Postcondition:
  *
  * - 分配物理页面并插入`pgdir`页目录的`va`映射项
- * - `va`对应的页表项权限设置为 PTE_C_CACHEABLE | PTE_V |
- *   （若 va < UVPT 则附加 PTE_D）
+ * - `va`对应的页表项权限设置为 PTE_R | PTE_V |
+ *   （若 va < UTOP 则附加 PTE_W）
  * - 移除`va`地址原有的所有映射，原映射的物理页的引用计数将 -1
  * - 已分配页面的`pp_ref`引用计数增加
  */
-static void passive_alloc(u_int va, Pde *pgdir, u_int asid) {
+static void passive_alloc(u_reg_t va, Pte *pgdir, u_int asid) {
     struct Page *p = NULL;
 
     if (va < UTEMP) {
@@ -84,7 +63,7 @@ static void passive_alloc(u_int va, Pde *pgdir, u_int asid) {
     // Postconditon for `page_alloc`: now, p points to the allocated Page
 
     panic_on(page_insert(pgdir, asid, p, PTE_ADDR(va),
-                         (va >= UVPT && va < ULIM) ? 0 : PTE_D));
+                         (va >= UTOP) ? PTE_RO : PTE_RW));
 }
 
 /*

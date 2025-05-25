@@ -5,11 +5,12 @@
  * Part 1.  Page table/directory defines.
  */
 
+#include <bitops.h>
 #define HIGH_ADDR_IMM 0xFFFFFFC000000000
 #define LOW_ADDR_IMM 0x80000000
 #define LOAD_ADDR_IMM 0x80200000
 #define BASE_ADDR_IMM 0xFFFFFFC000200000
-#define KERNEL_END_ADDR_BEFORE_PAGING_IMM 0x80400000
+#define KERNEL_END_ADDR_BEFORE_PAGING_IMM 0x81000000
 
 #define HIGH_ADDR_OFFSET ((HIGH_ADDR_IMM) - (LOW_ADDR_IMM))
 
@@ -49,9 +50,9 @@
 #define P3X(va) ((((u_reg_t)(va)) >> P3SHIFT) & GENMASK(8, 0))
 
 // 给定一个物理地址，返回其物理页号（27 位），高位为 0
-#define PPN(pa) (((u_reg_t)(pa)) >> PGSHIFT)
+#define PPN(pa) (((u_reg_t)(pa)) >> PAGE_SHIFT)
 // 给定一个虚拟地址，返回其虚拟页号（20 位），高位为 0
-#define VPN(va) (((u_long)(va)) >> PGSHIFT)
+#define VPN(va) (((u_reg_t)(va)) >> PAGE_SHIFT)
 
 // 给定一个页表项（64位=10保留 + 44 物理页号 + 2 软件标志 + 8 硬件标志），
 // 返回其物理页的首地址（物理页号 44 位 + 12 位 0）
@@ -101,6 +102,8 @@
 #define PTE_XO (PTE_X)
 #define PTE_RX (PTE_R | PTE_X)
 #define PTE_RWX (PTE_R | PTE_W | PTE_X)
+
+#define PTE_IS_NON_LEAF(pte) ((((u_reg_t)(pte)) & GENMASK(3, 1)) == 0)
 
 // 硬件标志位：用户态可访问
 #define PTE_USER 0x0010
@@ -162,25 +165,35 @@
  o
 */
 
-// 内核.text 节被加载到的位置:0x8002 0000
-#define KERNBASE 0x80020000
+#define KSTACKTOP 0xFFFFFFC001000000ULL
 
-// 内核栈开始的位置：0x8040 0000
-#define KSTACKTOP (ULIM + PDMAP)
-// 用户空间顶部：0x8000 0000
-#define ULIM 0x80000000
+#define KSTACKBOTTOM ((KSTACKTOP) - P3MAP)
 
-#define UVPT (ULIM - PDMAP)
-#define UPAGES (UVPT - PDMAP)
-#define UENVS (UPAGES - PDMAP)
+// 用户空间顶部：0x003F FFFF FFFF - 256GB
+#define ULIM 0x003FFFFFFFFFULL
 
+// 用户空间只读访问自身页表：[0x003F BFFF FFFF, 0x003F FFFF FFFF) 1GB
+#define UVPT (ULIM - P1MAP)
+// 用户空间只读访问物理页结构体：[0x003F 7FFF FFFF, 0x003F BFFF FFFF) 1GB
+#define UPAGES (UVPT - P1MAP)
+// 用户空间只读访问Env块：[0x003F 3FFF FFFF, 0x003F 7FFF FFFF) 1GB
+#define UENVS (UPAGES - P1MAP)
+
+// 用户可用空间顶部：0x003F 3FFF FFFF
 #define UTOP UENVS
+
+// 用户异常栈：[0x003F 3FFF EFFF, 0x003F 3FFF FFFF) 4KB
 #define UXSTACKTOP UTOP
 
-#define USTACKTOP (UTOP - 2 * PTMAP)
-#define UTEXT PDMAP
-#define UCOW (UTEXT - PTMAP)
-#define UTEMP (UCOW - PTMAP)
+// 用户栈：0x003F 3FFF DFFF
+#define USTACKTOP (UTOP - 2 * P3MAP)
+
+// 代码区：0x0040 0000
+#define UTEXT (2 * P2MAP)
+// 用户COW异常处理的临时页：[0x003F F000, 0x0040 0000) 4KB
+#define UCOW (UTEXT - P3MAP)
+// 0x003F E000
+#define UTEMP (UCOW - P3MAP)
 
 #ifndef __ASSEMBLER__
 
@@ -192,30 +205,38 @@
 #include <types.h>
 
 // 最大可用的物理页数，在`pmap.c`中定义，由`mips_detect_memory`初始化
-extern u_long npage;
+extern u_reg_t npage;
 
-// 表示一个页目录表项，32 位，实际为 unsigned long
-typedef u_long Pde;
-// 表示一个页表项，32 位，实际为 unsigned long
-typedef u_long Pte;
+// 表示一个页表项，64 位
+typedef u_reg_t Pte;
 
 // 将直接映射区域[0xFFFFFFC000000000, 0xFFFFFFC040000000)
-// 的虚拟地址转化为物理地址
+// 的虚拟地址转化为DRAM偏移地址
 // Precondition：传入直接映射区域范围内的
-#define PADDR(kva)                                                             \
-    ({                                                                         \
-        u_reg_t _a = (u_reg_t)(kva);                                           \
-        _a - HIGH_ADDR_OFFSET;                                                 \
-    })
+#define DRAMADDR(kva) ((u_reg_t)(kva) - HIGH_ADDR_IMM)
 
-// 将物理地址转化直接映射区域[0xFFFFFFC000000000, 0xFFFFFFC040000000)
+// 将直接映射区域[0xFFFFFFC000000000, 0xFFFFFFC040000000)
+// 的虚拟地址转化为物理地址（从0x80000000开始）
+// Precondition：传入直接映射区域范围内的
+#define PADDR(kva) ((u_reg_t)(kva) - HIGH_ADDR_OFFSET)
+
+// 将DRAM偏移地址地址转化直接映射区域[0xFFFFFFC000000000, 0xFFFFFFC040000000)
 // 的虚拟地址
 // Precondition：
 // - 传入的地址在物理内存空间之内（小于总计物理内存容量）
 // - 传入的地址 < 1GB
 // Panics：
 // - 若输入的物理地址超出物理内存空间
-#define KADDR(pa) ({ (pa) + HIGH_ADDR_OFFSET; })
+#define D2KADDR(pa) ((pa) + HIGH_ADDR_IMM)
+
+// 将物理地址地址转化直接映射区域[0xFFFFFFC000000000, 0xFFFFFFC040000000)
+// 的虚拟地址
+// Precondition：
+// - 传入的地址在物理内存空间之内（小于总计物理内存容量）
+// - 传入的地址 < 1GB
+// Panics：
+// - 若输入的物理地址超出物理内存空间
+#define P2KADDR(pa) ((pa) + HIGH_ADDR_OFFSET)
 
 // 断言表达式 x 的结果为真
 // Panic：若表达式 x 的结果为假
@@ -240,25 +261,21 @@ typedef u_long Pte;
 /*
  * 概述：
  *
- * 根据传入的 entryhi 值查找并清除对应的 TLB 条目
- * 若存在匹配项，则通过写入零值使其无效；若不存在，则直接返回。
+ * 清除TLB中对于地址空间asid，关于虚拟地址va的映射
  *
  * Preconditon：
  *
- * 传入的 entryhi 需包含合法的 VPN2 和 ASID，以正确匹配 TLB 条目。
  *
  * Postcondition：
  *
- * - 若存在匹配条目，该条目被无效化（EntryLo0、EntryLo1 清零）
+ * - 若存在匹配条目，该条目被无效化
  * - 若无匹配条目，TLB 内容保持不变。
  *
- * 注意：函数将保存并恢复EntryHi，无需调用者处理
  */
-extern void tlb_out(u_int entryhi);
+extern void tlb_invalidate(uint16_t asid, uint16_t va);
 /* 概述:
  *
- * 使ASID对应的虚拟地址空间中映射虚拟地址 `va` 的 TLB
- * 条目失效。
+ * 使ASID对应的虚拟地址空间中的 TLB 条目失效。
  *
  * 具体的，该页和相邻页的映射都将从TLB中移除。
  *
@@ -268,12 +285,10 @@ extern void tlb_out(u_int entryhi);
  *
  * Postconditon:
  *
- * 如果 TLB 中存在特定条目，则通过将对应的 TLB条目写为零来使其失效；
+ * 如果 TLB 中存在特定条目，则通过sfence.vma使其失效；
  *
  * 否则，不会发生任何操作。
- *
- * 由于 4Kc TLB条目的结构，与该虚拟地址对应的页 **以及** 相邻页的映射将被移除。
  */
-void tlb_invalidate(u_int asid, u_long va);
+extern void tlb_flush_asid(u_int asid);
 #endif //!__ASSEMBLER__
 #endif // !_MMU_H_

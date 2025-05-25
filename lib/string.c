@@ -1,60 +1,103 @@
 #include <num.h>
+#include <stdint.h>
+#include <string.h>
 #include <types.h>
 
-void *memcpy(void *dst, const void *src, size_t n) {
-    void *dstaddr = dst;
-    void *max = dst + n;
+void *memcpy(void *restrict dest, const void *restrict src, size_t n) {
+    unsigned char *d = dest;
+    const unsigned char *s = src;
 
-    if (((u_long)src & 3) != ((u_long)dst & 3)) {
-        while (dst < max) {
-            *(char *)dst++ = *(char *)src++;
+    // 处理8字节对齐的可能性
+    if ((((uintptr_t)s & 7) == ((uintptr_t)d & 7))) {
+        // 复制到对齐边界
+        while (n > 0 && ((uintptr_t)s & 7)) {
+            *d++ = *s++;
+            n--;
         }
-        return dstaddr;
+
+        // 用64位块复制
+        uint64_t *d64 = (uint64_t *)d;
+        const uint64_t *s64 = (const uint64_t *)s;
+        for (; n >= 8; n -= 8) {
+            *d64++ = *s64++;
+        }
+        d = (unsigned char *)d64;
+        s = (const unsigned char *)s64;
     }
 
-    while (((u_long)dst & 3) && dst < max) {
-        *(char *)dst++ = *(char *)src++;
+    // 处理4字节对齐的可能性
+    if (n >= 4 && (((uintptr_t)s & 3) == ((uintptr_t)d & 3))) {
+        // 复制到4字节对齐
+        while (n > 0 && ((uintptr_t)s & 3)) {
+            *d++ = *s++;
+            n--;
+        }
+
+        // 用32位块复制
+        uint32_t *d32 = (uint32_t *)d;
+        const uint32_t *s32 = (const uint32_t *)s;
+        for (; n >= 4; n -= 4) {
+            *d32++ = *s32++;
+        }
+        d = (unsigned char *)d32;
+        s = (const unsigned char *)s32;
     }
 
-    // copy machine words while possible
-    while (dst + 4 <= max) {
-        *(uint32_t *)dst = *(uint32_t *)src;
-        dst += 4;
-        src += 4;
+    // 处理2字节对齐的可能性
+    if (n >= 2 && (((uintptr_t)s & 1) == ((uintptr_t)d & 1))) {
+        // 仅处理对齐到2字节
+        if (((uintptr_t)s & 1) && n > 0) {
+            *d++ = *s++;
+            n--;
+        }
+
+        // 用16位块复制
+        uint16_t *d16 = (uint16_t *)d;
+        const uint16_t *s16 = (const uint16_t *)s;
+        for (; n >= 2; n -= 2) {
+            *d16++ = *s16++;
+        }
+        d = (unsigned char *)d16;
+        s = (const unsigned char *)s16;
     }
 
-    // finish the remaining 0-3 bytes
-    while (dst < max) {
-        *(char *)dst++ = *(char *)src++;
+    // 处理剩余的字节
+    while (n-- > 0) {
+        *d++ = *s++;
     }
-    return dstaddr;
+
+    return dest;
 }
 
-void *memset(void *dst, int c, size_t n) {
-    void *dstaddr = dst;
-    void *max = dst + n;
-    u_char byte = c & 0xff;
-    uint32_t word = byte | byte << 8 | byte << 16 | byte << 24;
+void *memset(void *dst_, int c, size_t n) {
+    char *dst = (char *)dst_;
+    const char *max = dst + n;
+    uint8_t byte = c & 0xff;
+    uint64_t word = (uint64_t)byte << 56 | (uint64_t)byte << 48 |
+                    (uint64_t)byte << 40 | (uint64_t)byte << 32 |
+                    (uint64_t)byte << 24 | (uint64_t)byte << 16 |
+                    (uint64_t)byte << 8 | (uint64_t)byte;
 
-    while (((u_long)dst & 3) && dst < max) {
-        *(u_char *)dst++ = byte;
+    // 处理未对齐的起始部分
+    while ((uintptr_t)dst % 8 != 0 && dst < max) {
+        *dst++ = byte;
     }
 
-    // fill machine words while possible
-    while (dst + 4 <= max) {
-        *(uint32_t *)dst = word;
-        dst += 4;
+    // 以64位字填充对齐部分
+    while (dst + 8 <= max) {
+        *(uint64_t *)dst = word;
+        dst += 8;
     }
 
-    // finish the remaining 0-3 bytes
+    // 处理剩余字节
     while (dst < max) {
-        *(u_char *)dst++ = byte;
+        *dst++ = byte;
     }
-    return dstaddr;
+    return dst_;
 }
 
 size_t strlen(const char *s) {
-    int n;
+    size_t n;
 
     for (n = 0; *s; s++) {
         n++;

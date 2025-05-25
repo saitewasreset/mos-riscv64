@@ -1,13 +1,12 @@
 #include <backtrace.h>
+#include <elf.h>
 #include <printk.h>
 #include <types.h>
-#include <elf.h>
 
 const char *lookup_function_name(size_t addr) {
-    const char *function_name = NULL;
-
     size_t symbol_table_size = *(size_t *)((size_t)_super_info_start);
-    size_t string_table_size = *(size_t *)((size_t)_super_info_start + sizeof(size_t));
+    size_t string_table_size =
+        *(size_t *)((size_t)_super_info_start + sizeof(size_t));
 
     size_t string_table_end = (size_t)_strtab_start + string_table_size;
 
@@ -15,15 +14,17 @@ const char *lookup_function_name(size_t addr) {
 
     Elf64_Sym *symbol_table = (Elf64_Sym *)_symtab_start;
 
-    for (size_t i = 0; i < symbol_count; i ++) {
+    for (size_t i = 0; i < symbol_count; i++) {
         Elf64_Sym *current_symbol = &symbol_table[i];
 
         if (ELF64_ST_TYPE(current_symbol->st_info) == STT_FUNC) {
             size_t function_begin_va = current_symbol->st_value;
-            size_t function_end_va = function_begin_va + current_symbol->st_size;
+            size_t function_end_va =
+                function_begin_va + current_symbol->st_size;
 
             if ((addr >= function_begin_va) && (addr < function_end_va)) {
-                size_t symbol_name_va = (size_t)current_symbol->st_name + (size_t)_strtab_start;
+                size_t symbol_name_va =
+                    (size_t)current_symbol->st_name + (size_t)_strtab_start;
 
                 if (symbol_name_va < string_table_end) {
                     return (const char *)symbol_name_va;
@@ -49,7 +50,8 @@ void print_backtrace(void) {
     u_reg_t layer = 0;
 
     while (is_valid_stack_addr(current_fp)) {
-        const char *current_function_name = lookup_function_name(current_function);
+        const char *current_function_name =
+            lookup_function_name(current_function);
 
         if (current_function_name == NULL) {
             current_function_name = "?";

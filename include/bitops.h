@@ -1,7 +1,7 @@
 #ifndef _SYS_BITOPS_H_
 #define _SYS_BITOPS_H_
 
-#define BITS_PER_LONG 32
+#define BITS_PER_LONG 64
 #define BITS_PER_LONG_LONG 64
 
 /*

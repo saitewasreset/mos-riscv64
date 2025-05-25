@@ -37,6 +37,10 @@ static inline struct sbiret riscv_sbicall(u_reg_t extension_id,
                  : "+r"(a0), "+r"(a1)
                  : "r"(a2), "r"(a3), "r"(a6), "r"(a7)
                  : "memory");
+
+    struct sbiret ret = {(reg_t)a0, (reg_t)a1};
+
+    return ret;
 }
 
 // Debug Console Extension

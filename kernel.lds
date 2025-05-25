@@ -10,18 +10,28 @@ ENTRY(_start)
 
 LOAD_ADDR = 0x80200000;
 BASE_ADDR = 0xFFFFFFC000200000;
+KERNEL_END_ADDR_BEFORE_PAGING = 0x81000000;
 KERNEL_END_ADDR = 0xFFFFFFC001000000;
 
 SECTIONS {
 	
 	. = BASE_ADDR;
 
-	.text : AT(LOAD_ADDR) {
-        PROVIDE(stext = .);
+    . = ALIGN(4K);
+
+    .text.boot : AT(LOAD_ADDR) {
         *(.text.boot)
+    }
+
+	.text : {
+        PROVIDE(stext = .);
         *(.text)
         PROVIDE(etext = .);
     }
+
+    .text.exc_gen_entry : {
+		*(.text.exc_gen_entry)
+	}
 
 	. = ALIGN(4K);
 
@@ -71,4 +81,5 @@ SECTIONS {
     }
 
     . = KERNEL_END_ADDR;
+    _kernel_end = .;
 }
