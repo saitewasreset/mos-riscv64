@@ -76,5 +76,10 @@ void print_backtrace(u_reg_t pc, u_reg_t fp, u_reg_t sp) {
         current_fp = saved_fp;
 
         layer += 1;
+
+        if (layer >= 20) {
+            printk("..........\n");
+            break;
+        }
     }
 }

@@ -29,6 +29,8 @@ SECTIONS {
         PROVIDE(etext = .);
     }
 
+    . = ALIGN(4);
+
     .text.exc_gen_entry : {
 		*(.text.exc_gen_entry)
 	}

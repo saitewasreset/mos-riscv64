@@ -86,4 +86,15 @@ static inline struct sbiret sbi_system_reset(uint32_t reset_type,
                          reset_type, reset_reason, 0, 0);
 }
 
+// Timer Extension
+
+#define TIMER_EXTENSION_ID 0x54494D45
+
+#define TIMER_SET_TIMER 0
+
+static inline struct sbiret sbi_timer_set_timer(uint64_t next_tick) {
+    return riscv_sbicall(TIMER_EXTENSION_ID, TIMER_SET_TIMER, next_tick, 0, 0,
+                         0);
+}
+
 #endif

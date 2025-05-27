@@ -1,12 +1,18 @@
 void load_icode_check(void);
 
-void mips_init(u_int argc, char **argv, char **penv, u_int ram_low_size) {
-    printk("init.c:\tmips_init() is called\n");
-    mips_detect_memory(ram_low_size);
-    mips_vm_init();
+void riscv64_init(u_reg_t hart_id, void *dtb_address) {
+    printk("init.c:\triscv64_init() is called\n");
+
+    exception_init();
+
+    riscv64_detect_memory();
+    riscv64_vm_init();
     page_init();
+
     env_init();
+
     load_icode_check();
+
     halt();
 }
 
@@ -27,7 +33,7 @@ void mem_eqz(const char *a, u_long size) {
     }
 }
 
-void seg_check(Pde *pgdir, u_long va, const char *std, u_long size) {
+void seg_check(Pte *pgdir, u_long va, const char *std, u_long size) {
     printk("segment check: %x - %x (%d)\n", va, va + size, size);
     Pte *pte;
     u_long off = va - ROUNDDOWN(va, PAGE_SIZE), i;
@@ -35,10 +41,10 @@ void seg_check(Pde *pgdir, u_long va, const char *std, u_long size) {
         u_long n = MIN(size, PAGE_SIZE - off);
         assert(page_lookup(pgdir, va - off, &pte));
         if (std) {
-            mem_eq((char *)KADDR(PTE_ADDR(*pte)) + off, std, n);
+            mem_eq((char *)P2KADDR(PTE_ADDR(*pte)) + off, std, n);
             std += n;
         } else {
-            mem_eqz((char *)KADDR(PTE_ADDR(*pte)) + off, n);
+            mem_eqz((char *)P2KADDR(PTE_ADDR(*pte)) + off, n);
         }
         va += n;
         size -= n;
@@ -48,9 +54,9 @@ void seg_check(Pde *pgdir, u_long va, const char *std, u_long size) {
         u_long n = MIN(size - i, PAGE_SIZE);
         assert(page_lookup(pgdir, va + i, &pte));
         if (std) {
-            mem_eq((char *)KADDR(PTE_ADDR(*pte)), std + i, n);
+            mem_eq((char *)P2KADDR(PTE_ADDR(*pte)), std + i, n);
         } else {
-            mem_eqz((char *)KADDR(PTE_ADDR(*pte)), n);
+            mem_eqz((char *)P2KADDR(PTE_ADDR(*pte)), n);
         }
     }
 }

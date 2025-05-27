@@ -43,16 +43,16 @@
 #define P3SHIFT 12
 
 // 给定一个虚拟地址，返回其一级页表偏移量，9 位，高位为 0
-#define P1X(va) ((((u_reg_t)(va)) >> P1SHIFT) & GENMASK(8, 0))
+#define P1X(va) ((((u_reg_t)(va) & GENMASK(38, 0)) >> P1SHIFT) & GENMASK(8, 0))
 // 给定一个虚拟地址，返回其二级页表偏移量，9 位，高位为 0
-#define P2X(va) ((((u_reg_t)(va)) >> P2SHIFT) & GENMASK(8, 0))
+#define P2X(va) ((((u_reg_t)(va) & GENMASK(38, 0)) >> P2SHIFT) & GENMASK(8, 0))
 // 给定一个虚拟地址，返回其三级页表偏移量，9 位，高位为 0
-#define P3X(va) ((((u_reg_t)(va)) >> P3SHIFT) & GENMASK(8, 0))
+#define P3X(va) ((((u_reg_t)(va) & GENMASK(38, 0)) >> P3SHIFT) & GENMASK(8, 0))
 
 // 给定一个物理地址，返回其物理页号（27 位），高位为 0
 #define PPN(pa) (((u_reg_t)(pa)) >> PAGE_SHIFT)
 // 给定一个虚拟地址，返回其虚拟页号（20 位），高位为 0
-#define VPN(va) (((u_reg_t)(va)) >> PAGE_SHIFT)
+#define VPN(va) (((u_reg_t)(va) & GENMASK(38, 0)) >> PAGE_SHIFT)
 
 // 给定一个页表项（64位=10保留 + 44 物理页号 + 2 软件标志 + 8 硬件标志），
 // 返回其物理页的首地址（物理页号 44 位 + 12 位 0）
@@ -169,23 +169,23 @@
 
 #define KSTACKBOTTOM ((KSTACKTOP) - P3MAP)
 
-// 用户空间顶部：0x003F FFFF FFFF - 256GB
-#define ULIM 0x003FFFFFFFFFULL
+// 用户空间顶部：0x003F 0000 0000 - 252GB
+#define ULIM 0x003F00000000ULL
 
-// 用户空间只读访问自身页表：[0x003F BFFF FFFF, 0x003F FFFF FFFF) 1GB
+// 用户空间只读访问自身页表：[0x003E C000 0000, 0x003F 0000 0000) 1GB
 #define UVPT (ULIM - P1MAP)
-// 用户空间只读访问物理页结构体：[0x003F 7FFF FFFF, 0x003F BFFF FFFF) 1GB
+// 用户空间只读访问物理页结构体：[0x003E 8000 0000, 0x003E C000 0000) 1GB
 #define UPAGES (UVPT - P1MAP)
-// 用户空间只读访问Env块：[0x003F 3FFF FFFF, 0x003F 7FFF FFFF) 1GB
+// 用户空间只读访问Env块：[0x003E 4000 0000, 0x003E 8000 0000) 1GB
 #define UENVS (UPAGES - P1MAP)
 
-// 用户可用空间顶部：0x003F 3FFF FFFF
+// 用户可用空间顶部：0x003E 4000 0000
 #define UTOP UENVS
 
-// 用户异常栈：[0x003F 3FFF EFFF, 0x003F 3FFF FFFF) 4KB
+// 用户异常栈：[0x003E 3FFF F000, 0x003E 4000 0000) 4KB
 #define UXSTACKTOP UTOP
 
-// 用户栈：0x003F 3FFF DFFF
+// 用户栈：0x003E 3FFF E000
 #define USTACKTOP (UTOP - 2 * P3MAP)
 
 // 代码区：0x0040 0000
@@ -251,8 +251,8 @@ typedef u_reg_t Pte;
 // Panic：若表达式 x == y 的结果为假
 #define assert_eq(x, y)                                                        \
     do {                                                                       \
-        u_reg_t left = (x);                                                    \
-        u_reg_t right = (y);                                                   \
+        u_reg_t left = (u_reg_t)(x);                                           \
+        u_reg_t right = (u_reg_t)(y);                                          \
         if (!(left == right)) {                                                \
             panic("assertion %s == %s failed: left = %016lx right = %016lx",   \
                   #x, #y, left, right);                                        \

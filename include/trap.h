@@ -15,6 +15,9 @@ struct Trapframe {
     u_reg_t badvaddr;
     u_reg_t scause;
     u_reg_t sepc;
+
+    u_reg_t sip;
+    u_reg_t sie;
 };
 
 void print_tf(struct Trapframe *tf);
@@ -68,8 +71,12 @@ void exception_init();
 #define TF_BADVADDR ((TF_SSTATUS) + 8)
 #define TF_SCAUSE ((TF_BADVADDR) + 8)
 #define TF_SEPC ((TF_SCAUSE) + 8)
+
+#define TF_SIP ((TF_SEPC) + 8)
+#define TF_SIE ((TF_SIP) + 8)
+
 /*
  * Size of stack frame, word/double word alignment
  */
-#define TF_SIZE ((TF_SEPC) + 8)
+#define TF_SIZE ((TF_SIE) + 8)
 #endif /* _TRAP_H_ */

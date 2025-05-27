@@ -39,6 +39,10 @@
 #define t5 x30  /* temporary register 5 */
 #define t6 x31  /* temporary register 6 */
 
+#define SSTATUS_SIE GENMASK(1, 1)
+#define SSTATUS_SPIE GENMASK(5, 5)
 #define SSTATUS_SPP GENMASK(8, 8)
+
+#define SIE_STIE GENMASK(5, 5)
 
 #endif /* __ASM_RISCV64_REGDEF_H */

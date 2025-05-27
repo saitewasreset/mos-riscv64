@@ -1,7 +1,7 @@
 /*
  * Set the architecture to mips.
  */
-OUTPUT_ARCH(mips)
+OUTPUT_ARCH(riscv)
 
 /*
  * Set the ENTRY point of the program to _start.

@@ -42,7 +42,7 @@ struct Env {
     LIST_ENTRY(Env) env_link; // 用于空闲Env链表(`env_free_list`)的指针域
     u_int
         env_id; // 进程id，注意：即使不同进程复用了同一个Env，他们的`env_id`也不同
-    u_int env_asid;      // 该Env的ASID
+    uint16_t env_asid;   // 该Env的ASID
     u_int env_parent_id; // 该Env父进程的**env_id**
     u_int env_status;    // 该Env的状态：ENV_FREE/ENV_RUNNABLE/ENV_NOT_RUNNABLE
     Pte *env_pgdir;      // 该Env的页目录地址（虚拟地址）
@@ -200,7 +200,7 @@ void env_free(struct Env *);
  * - 可能分配物理页（通过env_setup_vm和load_icode）
  * - 若ELF校验失败触发panic（通过load_icode）
  */
-struct Env *env_create(const void *binary, size_t size, int priority);
+struct Env *env_create(const void *binary, size_t size, uint32_t priority);
 /*
  * 概述：
  *

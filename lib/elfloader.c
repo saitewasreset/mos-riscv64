@@ -1,5 +1,8 @@
+#include "mmu.h"
+#include "types.h"
 #include <elf.h>
 #include <pmap.h>
+#include <stdint.h>
 
 /*
  * 概述：
@@ -19,9 +22,9 @@
  * 副作用：
  * - 无
  */
-const Elf32_Ehdr *elf_from(const void *binary, size_t size) {
-    const Elf32_Ehdr *ehdr = (const Elf32_Ehdr *)binary;
-    if (size >= sizeof(Elf32_Ehdr) && ehdr->e_ident[EI_MAG0] == ELFMAG0 &&
+const Elf64_Ehdr *elf_from(const void *binary, size_t size) {
+    const Elf64_Ehdr *ehdr = (const Elf64_Ehdr *)binary;
+    if (size >= sizeof(Elf64_Ehdr) && ehdr->e_ident[EI_MAG0] == ELFMAG0 &&
         ehdr->e_ident[EI_MAG1] == ELFMAG1 &&
         ehdr->e_ident[EI_MAG2] == ELFMAG2 &&
         ehdr->e_ident[EI_MAG3] == ELFMAG3 && ehdr->e_type == 2) {
@@ -79,14 +82,20 @@ const Elf32_Ehdr *elf_from(const void *binary, size_t size) {
  * ph->p_filesz`，额外分配的页面内容未初始化（依赖回调函数的实现）。
  */
 // Checked by DeepSeek R1 20250507 1716
-int elf_load_seg(Elf32_Phdr *ph, const void *bin, elf_mapper_t map_page,
+int elf_load_seg(Elf64_Phdr *ph, const void *bin, elf_mapper_t map_page,
                  void *data) {
-    u_long va = ph->p_vaddr;
+    u_reg_t va = ph->p_vaddr;
     size_t bin_size = ph->p_filesz;
     size_t sgsize = ph->p_memsz;
-    u_int perm = PTE_V;
+
+    uint32_t perm = PTE_V | PTE_R | PTE_USER;
+
     if (ph->p_flags & PF_W) {
-        perm |= PTE_D;
+        perm |= PTE_W;
+    }
+
+    if (ph->p_flags & PF_X) {
+        perm |= PTE_X;
     }
 
     int r;

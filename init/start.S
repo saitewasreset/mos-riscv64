@@ -63,8 +63,8 @@ BEGIN(enable_paging, 16)
 	
 	// 将KERNEL_END_ADDR开始的一页作为页目录
 	// 这要求该地址4字节对齐
-	// **物理地址**：0x8040_0000
-	// 物理页号：0x0008_0400
+	// **物理地址**：0x8100_0000
+	// 物理页号：0x0008_1000
 	// 将一级页表置零
 
 	li a0, KERNEL_END_ADDR_BEFORE_PAGING_IMM

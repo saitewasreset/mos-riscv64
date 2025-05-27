@@ -1,12 +1,13 @@
-#include "error.h"
-#include "queue.h"
-#include <asm/cp0regdef.h>
+#include "asm/regdef.h"
 #include <elf.h>
 #include <env.h>
+#include <error.h>
 #include <mmu.h>
 #include <pmap.h>
 #include <printk.h>
+#include <queue.h>
 #include <sched.h>
+#include <types.h>
 
 // 所有Env组成的列表，静态分配(bss段)
 struct Env envs[NENV] __attribute__((aligned(PAGE_SIZE))); // All environments
@@ -20,7 +21,7 @@ static struct Env_list
 // 调度队列头部的进程将在下次进程上下文切换时（schedule函数）运行
 struct Env_sched_list env_sched_list;
 
-static Pde *
+static Pte *
     base_pgdir; // 用户程序页目录模板，含有`pages`、`envs`的只读映射，由`env_init`初始化
 
 static uint32_t asid_bitmap[NASID / 32] = {
@@ -33,10 +34,10 @@ static uint32_t asid_bitmap[NASID / 32] = {
  *   return 0 and set '*asid' to the allocated ASID on success.
  *   return -E_NO_FREE_ENV if no ASID is available.
  */
-static int asid_alloc(u_int *asid) {
-    for (u_int i = 0; i < NASID; ++i) {
-        int index = i >> 5;
-        int inner = i & 31;
+static int asid_alloc(uint16_t *asid) {
+    for (uint16_t i = 0; i < NASID; ++i) {
+        uint16_t index = (uint16_t)(i >> 5);
+        uint16_t inner = (uint16_t)(i & 31);
         if ((asid_bitmap[index] & (1 << inner)) == 0) {
             asid_bitmap[index] |= 1 << inner;
             *asid = i;
@@ -55,10 +56,10 @@ static int asid_alloc(u_int *asid) {
  * Post-Condition:
  *  The ASID is freed and may be allocated again later.
  */
-static void asid_free(u_int i) {
-    int index = i >> 5;
-    int inner = i & 31;
-    asid_bitmap[index] &= ~(1 << inner);
+static void asid_free(uint16_t asid) {
+    uint16_t index = (uint16_t)(asid >> 5);
+    uint16_t inner = (uint16_t)(asid & 31);
+    asid_bitmap[index] &= (uint32_t)(~(1 << inner));
 }
 
 /*
@@ -71,13 +72,13 @@ static void asid_free(u_int i) {
  * Precondition：
  * - 'pa'、'va'、'size'必须按页对齐（PAGE_SIZE）
  * - 'pgdir'必须指向有效的页目录结构
- * - 'perm'参数不得包含PTE_V和PTE_C_CACHEABLE标志位（由函数自动添加）
+ * - 'perm'参数不得包含PTE_V（由函数自动添加）
  * - 'asid'必须是有效的地址空间标识符
  *
  * Postcondition：
  * - [va, va+size)范围内的每个虚拟页：
  *   - 映射到对应的物理页[pa, pa+size)
- *   - 页表项权限为'perm | PTE_C_CACHEABLE | PTE_V'
+ *   - 页表项权限为'perm | PTE_V'
  *   - 若原存在映射，旧页引用计数-1，新页引用计数+1
  * - TLB中相关条目被无效化
  *
@@ -87,8 +88,8 @@ static void asid_free(u_int i) {
  * - 修改物理页的引用计数（pp_ref字段）
  * - 调用tlb_invalidate使相关TLB条目失效
  */
-static void map_segment(Pde *pgdir, u_int asid, u_long pa, u_long va,
-                        u_int size, u_int perm) {
+static void map_segment(Pte *pgdir, uint16_t asid, u_reg_t pa, u_reg_t va,
+                        u_reg_t size, uint32_t perm) {
 
     assert(pa % PAGE_SIZE == 0);
     assert(va % PAGE_SIZE == 0);
@@ -209,7 +210,7 @@ int envid2env(u_int envid, struct Env **penv, int checkperm) {
  * 概述：
  *
  *   初始化所有Env结构体为空闲，将其加入空闲Env链表，并初始化调度队列。设置页目录模板，
- *   映射用户空间只读区域（UPAGES/UENVS）。
+ *   映射用户空间只读区域（UPAGES/UENVS）以及内核区域。
  *
  *   具体地，空闲链表中Env的顺序和全局变量`envs`数组中的相同。
  *
@@ -255,7 +256,7 @@ void env_init(void) {
 
     /*
      * We want to map 'UPAGES' and 'UENVS' to *every* user space with PTE_G
-     * permission (without PTE_D), then user programs can read (but cannot
+     * permission (with PTE_RO), then user programs can read (but cannot
      * write) kernel data structures 'pages' and 'envs'.
      *
      * Here we first map them into the *template* page directory 'base_pgdir'.
@@ -265,11 +266,21 @@ void env_init(void) {
     panic_on(page_alloc(&p));
     p->pp_ref++;
 
-    base_pgdir = (Pde *)page2kva(p);
+    base_pgdir = (Pte *)page2kva(p);
+
+    // 映射直接内存访问区域（内核态），一级巨页
+
+    base_pgdir[P1X(HIGH_ADDR_IMM)] =
+        ((LOW_ADDR_IMM >> PAGE_SHIFT) << 10) | PTE_RWX | PTE_GLOBAL | PTE_V;
+
+    // 映射Pages区域
     map_segment(base_pgdir, 0, PADDR(pages), UPAGES,
-                ROUND(npage * sizeof(struct Page), PAGE_SIZE), PTE_G);
+                ROUND(npage * sizeof(struct Page), PAGE_SIZE),
+                PTE_USER | PTE_RO | PTE_GLOBAL);
+    // 映射Envs区域
     map_segment(base_pgdir, 0, PADDR(envs), UENVS,
-                ROUND(NENV * sizeof(struct Env), PAGE_SIZE), PTE_G);
+                ROUND(NENV * sizeof(struct Env), PAGE_SIZE),
+                PTE_USER | PTE_RO | PTE_GLOBAL);
 }
 
 /*
@@ -311,7 +322,7 @@ static int env_setup_vm(struct Env *e) {
 
     p->pp_ref++;
 
-    e->env_pgdir = (Pde *)page2kva(p);
+    e->env_pgdir = (Pte *)page2kva(p);
 
     /* Step 2: Copy the template page directory 'base_pgdir' to 'e->env_pgdir'.
      */
@@ -320,8 +331,12 @@ static int env_setup_vm(struct Env *e) {
      * UVPT). See include/mmu.h for layout.
      */
     // 复制envs、pages区域的页目录映射
-    memcpy(e->env_pgdir + PDX(UTOP), base_pgdir + PDX(UTOP),
-           sizeof(Pde) * (PDX(UVPT) - PDX(UTOP)));
+    memcpy(e->env_pgdir + P1X(UTOP), base_pgdir + P1X(UTOP),
+           sizeof(Pte) * (P1X(UVPT) - P1X(UTOP)));
+
+    // 复制直接映射区域的页目录映射
+
+    e->env_pgdir[P1X(HIGH_ADDR_IMM)] = base_pgdir[P1X(HIGH_ADDR_IMM)];
 
     /* Step 3: Map its own page table at 'UVPT' with readonly permission.
      * As a result, user programs can read its page table through 'UVPT' */
@@ -329,7 +344,7 @@ static int env_setup_vm(struct Env *e) {
     // 此处，这4MB的内存空间刚好对应了进程自身的页表
     // 注意页表（env_pgdir）是4KB对齐的，故`PADDR(e->env_pgdir)`的低12位刚好为0
     // 这12位刚好对应硬件标志位、软件标志位
-    e->env_pgdir[PDX(UVPT)] = PADDR(e->env_pgdir) | PTE_V;
+    e->env_pgdir[P1X(UVPT)] = PADDR(e->env_pgdir) | PTE_V;
     return 0;
 }
 
@@ -338,6 +353,8 @@ static int env_setup_vm(struct Env *e) {
  *
  *   分配并初始化一个新的Env结构体。
  *   成功时，新Env将存储在'*new'中。
+ *
+ *   本函数将设置Env的栈指针。
  *
  * Precondition：
  * - 若新Env没有父进程，'parent_id'应为0
@@ -422,10 +439,18 @@ int env_alloc(struct Env **new, u_int parent_id) {
     // 处理器仍处于内核态，可以继续执行eret指令
     // 当执行eret后，STATUS_EXL自动设置为0，且此时STATUS_UM = 1
     // 处理器以用户态继续执行用户进程
-    e->env_tf.cp0_status = STATUS_IM7 | STATUS_IE | STATUS_EXL | STATUS_UM;
 
-    // 初始化sp寄存器（regs[29]），在栈顶为'argc'、'argv'参数预留空间
-    e->env_tf.regs[29] = USTACKTOP - sizeof(int) - sizeof(char **);
+    // SIE = 0，当前在内核态，关闭中断
+    // SPIE = 1，返回到用户态，开启中断
+    // UBE = 0，小端
+    // SPP = 0，之前的模式，0表示用户态
+    e->env_tf.sstatus = SSTATUS_SPIE;
+
+    // STIE = 1，启用时钟中断
+    e->env_tf.sie = SIE_STIE;
+
+    // 初始化sp寄存器（regs[2]），在栈顶为'argc'、'argv'参数预留空间
+    e->env_tf.regs[2] = USTACKTOP - sizeof(int) - sizeof(char **);
 
     /* Step 5: Remove the new Env from env_free_list. */
     /* Exercise 3.4: Your code here. (4/4) */
@@ -438,21 +463,21 @@ int env_alloc(struct Env **new, u_int parent_id) {
 
 /* 概述:
  *   （含 TLB 操作）映射`env`对应的用户地址空间中的一页。
- *    将页权限设置为`perm | PTE_V | PTE_C_CACHEABLE`。
+ *    将页权限设置为`perm | PTE_V`。
  *    若`src`不为空，将`src`起始，长度为`len`的数据复制到页中偏移量为`offset`的位置。
  *
  * Precondition:
  * - 'offset + len'不能大于'PAGE_SIZE' (由调用者保证)
  * - 每次调用必须传入对应**不同的的页**虚拟地址`va` (由调用者保证)
  * - `data` 必须指向有效的`struct Env`实例（即env结构体）
- * - `perm` 参数不得包含 PTE_V/PTE_C_CACHEABLE（由函数显式添加）
+ * - `perm` 参数不得包含 PTE_V（由函数显式添加）
  * - 全局变量`page_free_list`必须为合法的空闲物理页链表
  *
  * Postcondition:
  * - 成功时返回0：
  *   - 物理页被插入到`env->env_pgdir`的`va`处
  *   - 若`src`不为NULL，数据被复制到物理页的`offset`位置
- *   - 页表项权限为`perm | PTE_C_CACHEABLE | PTE_V`
+ *   - 页表项权限为`perm | PTE_V`
  * - 失败时返回错误码：
  *   - E_NO_MEM: 物理页分配失败、页表项分配失败
  *
@@ -497,7 +522,7 @@ static int load_icode_mapper(void *data, u_long va, size_t offset, u_int perm,
  *   具体步骤包括：
  *     1. 验证并解析 ELF 头。
  *     2. 遍历程序头表，加载所有类型为 PT_LOAD 的段。
- *     3. 设置用户环境的入口地址：保存到进程上下文的EPC寄存器中，以便`eret`后
+ *     3. 设置用户环境的入口地址：保存到进程上下文的EPC寄存器中，以便`sret`后
  *        从此处开始执行。
  *
  * Precondition：
@@ -522,7 +547,7 @@ static int load_icode_mapper(void *data, u_long va, size_t offset, u_int perm,
  */
 static void load_icode(struct Env *e, const void *binary, size_t size) {
     /* Step 1: Use 'elf_from' to parse an ELF header from 'binary'. */
-    const Elf32_Ehdr *ehdr = elf_from(binary, size);
+    const Elf64_Ehdr *ehdr = elf_from(binary, size);
     if (!ehdr) {
         panic("bad elf at %x", binary);
     }
@@ -533,19 +558,19 @@ static void load_icode(struct Env *e, const void *binary, size_t size) {
      */
     size_t ph_off;
     ELF_FOREACH_PHDR_OFF(ph_off, ehdr) {
-        Elf32_Phdr *ph = (Elf32_Phdr *)(binary + ph_off);
+        Elf64_Phdr *ph = (Elf64_Phdr *)((size_t)binary + ph_off);
         if (ph->p_type == PT_LOAD) {
             // 'elf_load_seg' is defined in lib/elfloader.c
             // 'load_icode_mapper' defines the way in which a page in this
             // segment should be mapped.
-            panic_on(
-                elf_load_seg(ph, binary + ph->p_offset, load_icode_mapper, e));
+            panic_on(elf_load_seg(ph, (void *)((size_t)binary + ph->p_offset),
+                                  load_icode_mapper, e));
         }
     }
 
     /* Step 3: Set 'e->env_tf.cp0_epc' to 'ehdr->e_entry'. */
     /* Exercise 3.6: Your code here. */
-    e->env_tf.cp0_epc = ehdr->e_entry;
+    e->env_tf.sepc = ehdr->e_entry;
 }
 
 /*
@@ -580,7 +605,7 @@ static void load_icode(struct Env *e, const void *binary, size_t size) {
  * - 可能分配物理页（通过env_setup_vm和load_icode）
  * - 若ELF校验失败触发panic（通过load_icode）
  */
-struct Env *env_create(const void *binary, size_t size, int priority) {
+struct Env *env_create(const void *binary, size_t size, uint32_t priority) {
     struct Env *e;
     /* Step 1: Use 'env_alloc' to alloc a new env, with 0 as 'parent_id'. */
     /* Exercise 3.7: Your code here. (1/3) */
@@ -645,8 +670,9 @@ struct Env *env_create(const void *binary, size_t size, int priority) {
  * - 修改环境结构体的状态字段（env_status）
  */
 void env_free(struct Env *e) {
-    Pte *pt;
-    u_int pdeno, pteno, pa;
+    Pte *p2;
+    Pte *p3;
+    u_reg_t p1no, p2no, p3no, p1pa, p2pa;
 
     /* Hint: Note the environment's demise.*/
     printk("[%08x] free env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
@@ -655,39 +681,78 @@ void env_free(struct Env *e) {
     // 释放该进程中用户空间映射的所有页，注意，这只含到UTOP的页
     // 不包括映射的pages、envs、User VPT
     // 具体的，先检查页目录，对于页目录中有效的目录项
-    // 再在对应的二级页表移除映射
-    for (pdeno = 0; pdeno < PDX(UTOP); pdeno++) {
+    // 再检查对应的二级页表，对于二级页表中的有效项
+    // 再检查对应的三级页表
+    for (p1no = 0; p1no < P1X(UTOP); p1no++) {
+        Pte *p1_entry = &e->env_pgdir[p1no];
+
         /* Hint: only look at mapped page tables. */
-        if (!(e->env_pgdir[pdeno] & PTE_V)) {
+        if (!(*p1_entry & PTE_V)) {
             continue;
+        }
+
+        // 一级巨页
+        if (PTE_IS_NON_LEAF(*p1_entry) == 0) {
+            panic("Huge page is not supported, level = %d env = %08x va = "
+                  "0x%016lx\n",
+                  1, e->env_id, p1no << P1SHIFT);
         }
 
         /* Hint: find the pa and va of the page table. */
         // 对应二级页表的物理地址
-        pa = PTE_ADDR(e->env_pgdir[pdeno]);
-        pt = (Pte *)KADDR(pa);
+        p1pa = PTE_ADDR(*p1_entry);
+        p2 = (Pte *)P2KADDR(p1pa);
+
         /* Hint: Unmap all PTEs in this page table. */
-        for (pteno = 0; pteno <= PTX(~0); pteno++) {
-            if (pt[pteno] & PTE_V) {
-                // 移除虚拟地址`va`的映射`，并物理页的将引用计数减1
-                page_remove(e->env_pgdir, e->env_asid,
-                            (pdeno << PDSHIFT) | (pteno << PGSHIFT));
+        for (p2no = 0; p2no <= P2X(~0ULL); p2no++) {
+            Pte *p2_entry = &p2[p2no];
+
+            if (!(*p2_entry & PTE_V)) {
+                continue;
             }
+
+            if (PTE_IS_NON_LEAF(*p2_entry) == 0) {
+                panic("Huge page is not supported, level = %d env = %08x va = "
+                      "0x%016lx\n",
+                      2, e->env_id, (p1no << P1SHIFT) | (p2no << P2SHIFT));
+            }
+
+            p2pa = PTE_ADDR(*p2_entry);
+            p3 = (Pte *)P2KADDR(p2pa);
+
+            for (p3no = 0; p3no <= P3X(~0ULL); p3no++) {
+                Pte *p3_entry = &p3[p3no];
+
+                if (!(*p3_entry & PTE_V)) {
+                    continue;
+                }
+
+                page_remove(e->env_pgdir, e->env_asid,
+                            (p1no << P1SHIFT) | (p2no << P2SHIFT) |
+                                (p3no << P3SHIFT));
+            }
+
+            // 将二级页表项设置为无效
+            *p2_entry = 0;
+
+            // 将三级页表自身的物理页取消映射
+            page_decref(pa2page(p2pa));
         }
+
         /* Hint: free the page table itself. */
         // 将目录项设置为无效
-        e->env_pgdir[pdeno] = 0;
+        *p1_entry = 0;
         // 将二级页表自身的物理页取消映射（引用计数-1）
-        page_decref(pa2page(pa));
-        /* Hint: invalidate page table in TLB */
-        tlb_invalidate(e->env_asid, UVPT + (pdeno << PGSHIFT));
+        page_decref(pa2page(p1pa));
     }
     /* Hint: free the page directory. */
     page_decref(pa2page(PADDR(e->env_pgdir)));
     /* Hint: free the ASID */
     asid_free(e->env_asid);
     /* Hint: invalidate page directory in TLB */
-    tlb_invalidate(e->env_asid, UVPT + (PDX(UVPT) << PGSHIFT));
+
+    tlb_flush_asid(e->env_asid);
+
     /* Hint: return the environment to the free list. */
     e->env_status = ENV_FREE;
     LIST_INSERT_HEAD((&env_free_list), (e), env_link);
@@ -748,16 +813,17 @@ void env_destroy(struct Env *e) {
  * Precondition:
  * - tf 必须指向一个有效的 Trapframe 结构，该结构包含完整的寄存器状态
  * - asid 必须是一个有效的地址空间标识符，与当前进程对应
+ * - p1_ppn 必须对应用户进程一级页表的物理页号
  *
  * Postcondition:
  * - 恢复 Trapframe 中的所有寄存器状态，重置时钟计数器
- * - 通过 eret 指令返回到用户态，完成上下文切换
+ * - 通过 sret 指令返回到用户态，完成上下文切换
  *
  * 副作用：
  * - 修改 CP0_ENTRYHI 寄存器以设置 ASID
  * - 通过 RESET_KCLOCK 重置时钟相关寄存器
  */
-extern void env_pop_tf(struct Trapframe *tf, u_int asid)
+extern void env_pop_tf(struct Trapframe *tf, uint16_t asid, u_reg_t p1_ppn)
     __attribute__((noreturn));
 
 /* 概述:
@@ -836,7 +902,8 @@ void env_run(struct Env *e) {
      */
     /* Exercise 3.8: Your code here. (2/2) */
 
-    env_pop_tf(&curenv->env_tf, curenv->env_asid);
+    env_pop_tf(&curenv->env_tf, curenv->env_asid,
+               PADDR(cur_pgdir) >> PAGE_SHIFT);
 }
 
 void env_check() {
@@ -860,7 +927,7 @@ void env_check() {
     /* now this env_free list must be empty! */
     LIST_INIT(&env_free_list);
 
-    /* should be no free memory */
+    /* should be no free env */
     assert(env_alloc(&pe, 0) == -E_NO_FREE_ENV);
 
     /* recover env_free_list */
@@ -887,13 +954,13 @@ void env_check() {
         assert(va2pa(base_pgdir, UENVS + page_addr) == PADDR(envs) + page_addr);
     }
     /* check env_setup_vm() work well */
-    printk("pe1->env_pgdir %x\n", pe1->env_pgdir);
+    printk("pe1->env_pgdir 0x%016lx\n", pe1->env_pgdir);
 
-    assert(pe2->env_pgdir[PDX(UTOP)] == base_pgdir[PDX(UTOP)]);
-    assert(pe2->env_pgdir[PDX(UTOP) - 1] == 0);
+    assert(pe2->env_pgdir[P1X(UTOP)] == base_pgdir[P1X(UTOP)]);
+    assert(pe2->env_pgdir[P1X(UTOP) - 1] == 0);
     printk("env_setup_vm passed!\n");
 
-    printk("pe2`s sp register %x\n", pe2->env_tf.regs[29]);
+    printk("pe2`s sp register 0x%016lx\n", pe2->env_tf.regs[2]);
 
     /* free all env allocated in this function */
     TAILQ_INSERT_TAIL(&env_sched_list, pe0, env_sched_link);

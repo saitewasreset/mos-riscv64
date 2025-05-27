@@ -50,13 +50,13 @@
 	// 用户模式异常处理路径
 	move    t0, sp					// 保存原 sp 到 t0
 	li      sp, KSTACKTOP			// 加载内核栈顶地址到 sp
+	j		2f
 1:	// 统一处理入口（含内核模式异常重入）
 	move    t0, sp					// 保存原 sp 到 t0
+2:
 	addi    sp, sp, -TF_SIZE			// 在目标栈上分配陷阱帧空间
-
 	// 第二阶段：保存关键寄存器到陷阱帧
 	sd      t0, TF_REG2(sp)		// 保存原始 sp（用户栈或内核栈）
-
 
 	csrr    t0, sstatus
 	sd      t0, TF_SSTATUS(sp)
@@ -69,6 +69,12 @@
 
 	csrr    t0, sepc
 	sd      t0, TF_SEPC(sp)
+
+	csrr    t0, sip
+	sd      t0, TF_SIP(sp)
+
+	csrr    t0, sie
+	sd      t0, TF_SIE(sp)
 
 	// 恢复t0
 	csrr	t0, sscratch
@@ -137,6 +143,12 @@
 	ld		a0, TF_SEPC(sp)
 	csrw	sepc, a0
 
+	ld		a0, TF_SIE(sp)
+	csrw	sie, a0
+
+	ld		a0, TF_SIP(sp)
+	csrw	sip, a0
+
 	ld      x31, TF_REG31(sp)
 	ld      x30, TF_REG30(sp)
 	ld      x29, TF_REG29(sp)
@@ -167,5 +179,5 @@
 	ld      x4, TF_REG4(sp)
 	ld      x3, TF_REG3(sp)
 	ld      x1, TF_REG1(sp)
-	ld      sp, TF_REG29(sp) /* Deallocate stack */
+	ld      sp, TF_REG2(sp) /* Deallocate stack */
 .endm

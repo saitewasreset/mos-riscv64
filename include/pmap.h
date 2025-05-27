@@ -266,13 +266,13 @@ void page_decref(struct Page *pp);
  *   （含 TLB 操作）在虚拟地址空间`asid`中，
  *    将物理页'pp'映射到虚拟地址'va'，并按需增加物理页的引用计数。
  *
- *   - 如果`va`已映射了指定页，仅更新标志位，引用计数不变。
- *   - 如果`va`已映射到其他页，移除原映射并建立新映射，
+ *   - 如果`va`已有效映射了指定页，仅更新标志位，引用计数不变。
+ *   - 如果`va`已有效映射到其他页，移除原映射并建立新映射，
  *     旧页的引用计数 -1，新页的引用计数 +1。
- *   - 如果`va`未映射，创建其二级页表项（若需要），
+ *   - 如果`va`未有效映射，创建其二级页表项（若需要），
  *     分配物理页进行映射，新页的引用计数 +1。
  *
- * 页表项的低 12 位标志位设置为'perm | PTE_C_CACHEABLE | PTE_V'。
+ * 页表项的低 12 位标志位设置为'perm | PTE_V'。
  *
  * 在所有情况下，TLB 中的相关表项（若有），都将被移除，以使得新的映射生效。
  *
@@ -281,7 +281,7 @@ void page_decref(struct Page *pp);
  * - `pgdir`必须是指向有效页目录结构的指针
  * - `pp`必须指向`pages`数组中的有效物理页
  * - `va`无需按页对齐
- * - `perm`不得包含 PTE_V/PTE_C_CACHEABLE，这些标志将由函数显式设置
+ * - `perm`不得包含 PTE_V，这些标志将由函数显式设置
  * - `perm`的高20位必须为0
  * - `asid`必须是有效的地址空间标识符
  *
@@ -338,5 +338,7 @@ extern struct Page *pages;
 
 void physical_memory_manage_check(void);
 void page_check(void);
+
+void passive_alloc(u_reg_t va, Pte *pgdir, uint16_t asid);
 
 #endif /* _PMAP_H_ */

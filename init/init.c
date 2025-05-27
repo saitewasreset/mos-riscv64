@@ -1,10 +1,21 @@
 #include <asm/asm.h>
+#include <env.h>
 #include <machine.h>
 #include <pmap.h>
 #include <printk.h>
 #include <sbi.h>
 #include <trap.h>
 #include <types.h>
+
+/*
+ * Note:
+ * When build with 'make test lab=?_?', we will replace your 'mips_init' with a
+ * generated one from 'tests/lab?_?'.
+ */
+
+#ifdef MOS_INIT_OVERRIDDEN
+#include <generated/init_override.h>
+#else
 
 void riscv64_init(u_reg_t hart_id, void *dtb_address) __attribute__((noreturn));
 
@@ -19,7 +30,13 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
 
     // physical_memory_manage_check();
 
-    page_check();
+    // page_check();
+
+    env_init();
+
+    // envid2env_check();
+
+    env_check();
 
     printk("My life for Super Earth!\n");
     // lab2:
@@ -51,3 +68,5 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
     // schedule(0);
     halt();
 }
+
+#endif

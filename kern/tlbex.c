@@ -4,7 +4,6 @@
 #include <env.h>
 #include <pmap.h>
 
-
 /*
  * 概述：
  *
@@ -35,7 +34,7 @@
  * - 移除`va`地址原有的所有映射，原映射的物理页的引用计数将 -1
  * - 已分配页面的`pp_ref`引用计数增加
  */
-static void passive_alloc(u_reg_t va, Pte *pgdir, u_int asid) {
+void passive_alloc(u_reg_t va, Pte *pgdir, uint16_t asid) {
     struct Page *p = NULL;
 
     if (va < UTEMP) {
@@ -62,8 +61,8 @@ static void passive_alloc(u_reg_t va, Pte *pgdir, u_int asid) {
 
     // Postconditon for `page_alloc`: now, p points to the allocated Page
 
-    panic_on(page_insert(pgdir, asid, p, PTE_ADDR(va),
-                         (va >= UTOP) ? PTE_RO : PTE_RW));
+    panic_on(page_insert(pgdir, asid, p, va,
+                         ((va >= UTOP) ? PTE_RO : PTE_RW) | PTE_USER));
 }
 
 /*
@@ -154,29 +153,29 @@ void _do_tlb_refill(u_long *pentrylo, u_int va, u_int asid) {
  * - 修改传入的Trapframe结构内容(寄存器值和EPC)
  */
 void do_tlb_mod(struct Trapframe *tf) {
+
     struct Trapframe tmp_tf = *tf;
 
     // 若这是第一次发生异常，将用户栈设置为用户异常栈栈顶；
     // 否则，（说明发生嵌套TLB Mod异常），直接使用上次异常的sp
     // 这样可正确处理嵌套异常
-    if (tf->regs[29] < USTACKTOP || tf->regs[29] >= UXSTACKTOP) {
-        tf->regs[29] = UXSTACKTOP;
+    if (tf->regs[2] < USTACKTOP || tf->regs[2] >= UXSTACKTOP) {
+        tf->regs[2] = UXSTACKTOP;
     }
-    tf->regs[29] -= sizeof(struct Trapframe);
-    *(struct Trapframe *)tf->regs[29] = tmp_tf;
+    tf->regs[2] -= sizeof(struct Trapframe);
+    *(struct Trapframe *)tf->regs[2] = tmp_tf;
 
     Pte *pte;
-    page_lookup(cur_pgdir, tf->cp0_badvaddr, &pte);
+    page_lookup(cur_pgdir, tf->badvaddr, &pte);
 
     if (curenv->env_user_tlb_mod_entry) {
-        // 4 -> a0
-        tf->regs[4] = tf->regs[29];
-        // 29 -> sp
-        tf->regs[29] -= sizeof(tf->regs[4]);
+        // 10 -> a0
+        tf->regs[10] = tf->regs[2];
+
         // Hint: Set 'cp0_epc' in the context 'tf' to
         // 'curenv->env_user_tlb_mod_entry'.
         /* Exercise 4.11: Your code here. */
-        tf->cp0_epc = curenv->env_user_tlb_mod_entry;
+        tf->sepc = curenv->env_user_tlb_mod_entry;
 
     } else {
         panic("TLB Mod but no user handler registered");

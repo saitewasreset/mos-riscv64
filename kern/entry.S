@@ -2,17 +2,14 @@
 #include <stackframe.h>
 
 .macro BUILD_HANDLER exception handler
-BEGIN(handle_\exception, 16)
-	// BEGIN宏自动将sp-16，并存储了sp、fp
-	// 传递给异常处理函数的参数应当为现在的sp + 16
-
-	move   a0, sp
-	addi   a0, a0, 16
+.global handle_\exception
+handle_\exception:
+	mv   	a0, sp
 	jal     \handler
 	
 	RESTORE_ALL
+
 	sret
-END(handle_\exception, 16)
 .endm
 
 // 设置异常处理函数（统一处理所有异常、中断）
@@ -85,3 +82,5 @@ __ege_handle_int:
 	jr		t0
 
 BUILD_HANDLER reserved do_reserved
+BUILD_HANDLER clock do_clock
+BUILD_HANDLER page_fault do_page_fault
