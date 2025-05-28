@@ -82,6 +82,14 @@ SECTIONS {
         _strtab_end = .;
     }
 
+    .user_buffer : {
+        _user_buffer_start = .;
+
+        . += 1024 * 1024;
+
+        _user_buffer_end = .;
+    }
+
     . = KERNEL_END_ADDR;
     _kernel_end = .;
 }

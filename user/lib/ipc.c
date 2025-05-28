@@ -9,7 +9,7 @@
 // -E_IPC_NOT_RECV.
 //
 // Hint: use syscall_yield() to be CPU-friendly.
-void ipc_send(u_int whom, u_int val, const void *srcva, u_int perm) {
+void ipc_send(uint32_t whom, uint64_t val, const void *srcva, uint32_t perm) {
     int r;
     while ((r = syscall_ipc_try_send(whom, val, srcva, perm)) ==
            -E_IPC_NOT_RECV) {
@@ -22,7 +22,7 @@ void ipc_send(u_int whom, u_int val, const void *srcva, u_int perm) {
 // in *whom.
 //
 // Hint: use env to discover the value and who sent it.
-u_int ipc_recv(u_int *whom, void *dstva, u_int *perm) {
+uint64_t ipc_recv(uint32_t *whom, void *dstva, uint32_t *perm) {
     int r = syscall_ipc_recv(dstva);
     if (r != 0) {
         user_panic("syscall_ipc_recv err: %d", r);

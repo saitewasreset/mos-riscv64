@@ -77,9 +77,10 @@ void schedule(int yield) {
             panic("`schedule` called while env_sched_list is empty");
         }
 
-        count = nextenv->env_pri;
+        count = (int)nextenv->env_pri;
 
         count--;
+
         env_run(nextenv);
     } else {
         count--;

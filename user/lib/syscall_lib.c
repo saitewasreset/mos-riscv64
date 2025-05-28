@@ -6,7 +6,7 @@
 
 void syscall_putchar(int ch) { msyscall(SYS_putchar, ch); }
 
-int syscall_print_cons(const void *str, u_int num) {
+int syscall_print_cons(const void *str, size_t num) {
     return msyscall(SYS_print_cons, str, num);
 }
 
@@ -48,8 +48,8 @@ void syscall_panic(const char *msg) {
     user_panic("SYS_panic returned %d", r);
 }
 
-int syscall_ipc_try_send(u_int envid, u_int value, const void *srcva,
-                         u_int perm) {
+int syscall_ipc_try_send(uint32_t envid, uint64_t value, const void *srcva,
+                         uint32_t perm) {
     return msyscall(SYS_ipc_try_send, envid, value, srcva, perm);
 }
 
@@ -66,3 +66,7 @@ int syscall_read_dev(void *va, u_int dev, u_int size) {
     /* Exercise 5.2: Your code here. (2/2) */
     return msyscall(SYS_read_dev, va, dev, size);
 }
+
+void syscall_map_user_vpt(void) { msyscall(SYS_map_user_vpt); }
+
+void syscall_unmap_user_vpt(void) { msyscall(SYS_unmap_user_vpt); }

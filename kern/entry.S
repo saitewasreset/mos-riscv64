@@ -84,3 +84,5 @@ __ege_handle_int:
 BUILD_HANDLER reserved do_reserved
 BUILD_HANDLER clock do_clock
 BUILD_HANDLER page_fault do_page_fault
+BUILD_HANDLER sys do_syscall
+BUILD_HANDLER page_mod do_page_mod

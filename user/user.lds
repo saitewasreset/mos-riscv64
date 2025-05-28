@@ -24,10 +24,12 @@ SECTIONS {
 
 	.data ALIGN(4096) : {
 		*(.data)
+		*(.sdata)
 	} : data
 
 	.bss ALIGN(4096) : {
 		*(.bss)
+		*(.sbss)
 	} : data
 
 	end = . ;

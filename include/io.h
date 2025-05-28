@@ -18,7 +18,8 @@
  *   - KSEG1转换绕过MMU和缓存
  */
 static inline uint8_t ioread8(u_long paddr) {
-    return *(volatile uint8_t *)(paddr | KSEG1);
+    return 0;
+    // return *(volatile uint8_t *)(paddr | KSEG1);
 }
 
 /*
@@ -28,7 +29,8 @@ static inline uint8_t ioread8(u_long paddr) {
  * 其他说明同ioread8
  */
 static inline uint16_t ioread16(u_long paddr) {
-    return *(volatile uint16_t *)(paddr | KSEG1);
+    return 0;
+    // return *(volatile uint16_t *)(paddr | KSEG1);
 }
 
 /*
@@ -38,7 +40,8 @@ static inline uint16_t ioread16(u_long paddr) {
  * 其他说明同ioread8
  */
 static inline uint32_t ioread32(u_long paddr) {
-    return *(volatile uint32_t *)(paddr | KSEG1);
+    return 0;
+    // return *(volatile uint32_t *)(paddr | KSEG1);
 }
 
 /*
@@ -60,7 +63,7 @@ static inline uint32_t ioread32(u_long paddr) {
  *   - KSEG1转换实现物理地址到内核虚拟地址的映射
  */
 static inline void iowrite8(uint8_t data, u_long paddr) {
-    *(volatile uint8_t *)(paddr | KSEG1) = data;
+    //*(volatile uint8_t *)(paddr | KSEG1) = data;
 }
 
 /*
@@ -76,7 +79,7 @@ static inline void iowrite8(uint8_t data, u_long paddr) {
  * 其他说明同iowrite8
  */
 static inline void iowrite16(uint16_t data, u_long paddr) {
-    *(volatile uint16_t *)(paddr | KSEG1) = data;
+    //*(volatile uint16_t *)(paddr | KSEG1) = data;
 }
 
 /*
@@ -92,7 +95,7 @@ static inline void iowrite16(uint16_t data, u_long paddr) {
  * 其他说明同iowrite8
  */
 static inline void iowrite32(uint32_t data, u_long paddr) {
-    *(volatile uint32_t *)(paddr | KSEG1) = data;
+    //*(volatile uint32_t *)(paddr | KSEG1) = data;
 }
 
 #endif

@@ -1,10 +1,11 @@
 #include <lib.h>
 
-static void uassert(int cond) {
-    if (!cond) {
-        user_halt("OSTEST_ERR");
-    }
-}
+#define uassert(x)                                                             \
+    do {                                                                       \
+        if (!(x)) {                                                            \
+            user_halt("assertion failed: %s", #x);                             \
+        }                                                                      \
+    } while (0)
 
 static void accepted() { user_halt("OSTEST_OK"); }
 

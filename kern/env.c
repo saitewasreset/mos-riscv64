@@ -344,7 +344,8 @@ static int env_setup_vm(struct Env *e) {
     // 此处，这4MB的内存空间刚好对应了进程自身的页表
     // 注意页表（env_pgdir）是4KB对齐的，故`PADDR(e->env_pgdir)`的低12位刚好为0
     // 这12位刚好对应硬件标志位、软件标志位
-    e->env_pgdir[P1X(UVPT)] = PADDR(e->env_pgdir) | PTE_V;
+    // e->env_pgdir[P1X(UVPT)] = (PPN(PADDR(e->env_pgdir)) << 10) | PTE_V |
+    //                          PTE_NON_LEAF | PTE_USER | PTE_GLOBAL;
     return 0;
 }
 

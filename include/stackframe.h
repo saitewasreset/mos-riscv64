@@ -1,3 +1,6 @@
+#ifndef __STACK_FRAME_H__
+#define __STACK_FRAME_H__
+
 #include <asm/asm.h>
 #include <mmu.h>
 #include <trap.h>
@@ -181,3 +184,5 @@
 	ld      x1, TF_REG1(sp)
 	ld      sp, TF_REG2(sp) /* Deallocate stack */
 .endm
+
+#endif

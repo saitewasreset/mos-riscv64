@@ -4,6 +4,7 @@
 #include <pmap.h>
 #include <printk.h>
 #include <sbi.h>
+#include <sched.h>
 #include <trap.h>
 #include <types.h>
 

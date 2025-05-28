@@ -2,6 +2,7 @@
 #include <env.h>
 #include <lib.h>
 #include <mmu.h>
+#include <stdint.h>
 
 /*
  * 概述：
@@ -16,13 +17,13 @@
  * - 依赖全局状态：
  *   - vpt：当前进程页表的用户空间只读视图（用于获取页表项）
  *   - syscall_mem_*函数依赖的环境控制块（如curenv）必须有效
- *  - 'tf->cp0_badvaddr'必须是触发TLB Mod异常的虚拟地址
+ *  - 'tf->badvaddr'必须是触发TLB Mod异常的虚拟地址
  *
  * Postcondition：
  * - 成功时：
  *   - 异常地址va被重新映射到新的可写私有副本
  *   - 原页内容被完整复制到新页
- *   - 页表项权限去除PTE_COW标志，保留其他权限并添加PTE_D标志
+ *   - 页表项权限去除PTE_COW标志，保留其他权限并添加PTE_W标志
  * - 失败时：
  *   - 若va不是COW页（无PTE_COW标志），触发user_panic
  *   - 若内存分配/映射操作失败，触发user_panic
@@ -34,9 +35,10 @@
  */
 // Checked by DeepSeek-R1 20250424 16:01
 static void __attribute__((noreturn)) cow_entry(struct Trapframe *tf) {
-    u_long va = tf->cp0_badvaddr;
-    u_long perm;
 
+    syscall_map_user_vpt();
+    u_reg_t va = tf->badvaddr;
+    uint32_t perm;
     int r = 0;
 
     /* Step 1: Find the 'perm' in which the faulting address 'va' is mapped. */
@@ -44,47 +46,50 @@ static void __attribute__((noreturn)) cow_entry(struct Trapframe *tf) {
      * doesn't have 'PTE_COW', launch a 'user_panic'. */
     /* Exercise 4.13: Your code here. (1/6) */
 
-    perm = PTE_FLAGS(vpt[VPN(va)]);
+    perm = PTE_FLAGS(vp3[VPN(va)]);
 
     if ((perm & PTE_COW) == 0) {
-        user_panic(
-            "cow_entry called with va %08x, but it doesn't have PTE_COW flag",
-            va);
+        user_panic("cow_entry called with va 0x%016lx, but it doesn't have "
+                   "PTE_COW flag",
+                   va);
     }
 
-    /* Step 2: Remove 'PTE_COW' from the 'perm', and add 'PTE_D' to it. */
+    /* Step 2: Remove 'PTE_COW' from the 'perm', and add 'PTE_W' to it. */
     /* Exercise 4.13: Your code here. (2/6) */
 
-    u_long new_perm = (perm & ~PTE_COW) | PTE_D;
+    uint32_t new_perm = (perm & ~PTE_COW) | PTE_W;
 
     /* Step 3: Allocate a new page at 'UCOW'. */
     /* Exercise 4.13: Your code here. (3/6) */
 
     if ((r = syscall_mem_alloc(0, (void *)UCOW, new_perm)) != 0) {
-        user_panic("cow_entry failed allocate page for va %08x, ret: %d",
+        user_panic("cow_entry failed allocate page for va 0x%016lx, ret: %d",
                    (void *)UCOW, r);
     }
 
     /* Step 4: Copy the content of the faulting page at 'va' to 'UCOW'. */
     /* 注意：va可能未按页对齐，需用ROUNDDOWN获取页起始地址 */
     /* Exercise 4.13: Your code here. (4/6) */
-    u_long page_begin_va = ROUNDDOWN(va, PAGE_SIZE);
+    u_reg_t page_begin_va = ROUNDDOWN(va, PAGE_SIZE);
     memcpy((void *)UCOW, (void *)page_begin_va, PAGE_SIZE);
 
     // Step 5: Map the page at 'UCOW' to 'va' with the new 'perm'.
     /* Exercise 4.13: Your code here. (5/6) */
     if ((r = syscall_mem_map(0, (void *)UCOW, 0, (void *)page_begin_va,
                              new_perm)) != 0) {
-        user_panic("cow_entry failed map page from %08x to %08x, ret: %d",
-                   (void *)UCOW, (void *)page_begin_va, r);
+        user_panic(
+            "cow_entry failed map page from 0x%016lx to 0x%016lx, ret: %d",
+            (void *)UCOW, (void *)page_begin_va, r);
     }
 
     // Step 6: Unmap the page at 'UCOW'.
     /* Exercise 4.13: Your code here. (6/6) */
     if ((r = syscall_mem_unmap(0, (void *)UCOW)) != 0) {
-        user_panic("cow_entry failed unmap page at %08x, ret: %d",
+        user_panic("cow_entry failed unmap page at 0x%016lx, ret: %d",
                    (void *)UCOW);
     }
+
+    syscall_unmap_user_vpt();
 
     // Step 7: Return to the faulting routine.
     // 对于syscall_set_trapframe，若目标进程是当前进程，该系统调用将立即将本进程恢复到`tf`中的状态执行。
@@ -99,8 +104,8 @@ static void __attribute__((noreturn)) cow_entry(struct Trapframe *tf) {
  *   并根据页面属性，设置适当的权限标志（特别是处理写时复制场景）。
  *   该函数主要用于 fork 时的页面共享处理。
  *
- *   - 对于 PTE_D 置位且 PTE_LIBRARY 未置位的页面，父子进程的映射都会改为
- * PTE_COW 且清除 PTE_D
+ *   - 对于 PTE_W 置位且 PTE_LIBRARY 未置位的页面，父子进程的映射都会改为
+ * PTE_COW 且清除 PTE_W
  *   - 其他情况（只读页或共享页）保持原权限直接映射
  *
  * Precondition：
@@ -113,7 +118,7 @@ static void __attribute__((noreturn)) cow_entry(struct Trapframe *tf) {
  * Postcondition：
  * - 成功时：
  *   - 子进程的 vpn 页被映射到与父进程相同的物理页
- *   - 若原页可写且非共享，父子进程的页表项都会更新为 PTE_COW 且清除 PTE_D
+ *   - 若原页可写且非共享，父子进程的页表项都会更新为 PTE_COW 且清除 PTE_W
  *   - 其他情况保持原权限映射
  * - 失败时触发用户态 panic（通过 user_panic）
  *
@@ -124,20 +129,20 @@ static void __attribute__((noreturn)) cow_entry(struct Trapframe *tf) {
  * - 注意，当映射父进程的栈时，在本函数执行过程中就会触发TLB Mod异常
  */
 // Checked by DeepSeek-R1 and reference solution 20250424 15:17
-static void duppage(u_int envid, u_int vpn) {
+static void duppage(uint32_t envid, u_reg_t vpn) {
     int r;
-    u_int addr;
-    u_int perm;
+    u_reg_t addr;
+    uint32_t perm;
 
     /* Step 1: Get the permission of the page. */
     /* Hint: Use 'vpt' to find the page table entry. */
     /* Exercise 4.10: Your code here. (1/2) */
 
     // vpt is `const volatile Pte *`!
-    const volatile Pte *pte = &vpt[vpn];
+    const volatile Pte *pte = &vp3[vpn];
 
     perm = PTE_FLAGS(*pte);
-    addr = (vpn << PGSHIFT);
+    addr = (vpn << PAGE_SHIFT);
 
     /* Step 2: If the page is writable, and not shared with children, and not
      * marked as COW yet, then map it as copy-on-write, both in the parent (0)
@@ -163,15 +168,15 @@ static void duppage(u_int envid, u_int vpn) {
     // 处理共享库页面（保持原权限）
     if ((perm & PTE_LIBRARY) != 0) {
         new_perm = perm;
-        // 处理可写页面（设置为 COW 并清除 D 标志）
-    } else if ((perm & PTE_D) != 0) {
-        new_perm = (perm & (~PTE_D)) | PTE_COW;
+        // 处理可写页面（设置为 COW 并清除 W 标志）
+    } else if ((perm & PTE_W) != 0) {
+        new_perm = (perm & (~PTE_W)) | PTE_COW;
         // 其他情况（只读页等保持原权限）
     } else {
         new_perm = perm;
     }
 
-    void *va = (void *)(unsigned long)addr;
+    void *va = (void *)addr;
 
     /* 关键点：必须先映射子进程再重映射父进程，避免竞争条件 */
 
@@ -217,13 +222,13 @@ static void duppage(u_int envid, u_int vpn) {
  */
 // Checked by DeepSeek-R1 20250424 18:00
 int fork(void) {
-    u_int child;
+    uint32_t child;
 
     int r = 0;
 
     /* Step 1: Set our TLB Mod user exception entry to 'cow_entry' if not done
      * yet. */
-    if (env->env_user_tlb_mod_entry != (u_int)cow_entry) {
+    if (env->env_user_tlb_mod_entry != (uint64_t)cow_entry) {
         try(syscall_set_tlb_mod_entry(0, cow_entry));
     }
 
@@ -249,7 +254,7 @@ int fork(void) {
         return r;
     }
 
-    child = (u_int)r;
+    child = (uint32_t)r;
 
     if (child == 0) {
         // 子进程路径：设置正确的env指针，指向子进程的Env
@@ -260,35 +265,55 @@ int fork(void) {
 
     /* Step 3: 将USTACKTOP以下所有已映射页复制到子进程地址空间 */
     /* 关键点：
-     * - 使用vpd/vpt遍历页表结构
+     * - 使用vp1/vp2/vp3遍历页表结构
      * - 每个页目录项对应4MB地址空间
      * - 每个页表项对应4KB地址空间
      * - 跳过超过USTACKTOP的虚拟页
      */
-    u_int pte_count_per_page = (PAGE_SIZE / sizeof(Pte));
 
-    for (u_int pdx = 0; pdx <= PDX(USTACKTOP); pdx++) {
-        Pde current_pde = vpd[pdx];
+    syscall_map_user_vpt();
 
-        if ((current_pde & PTE_V) != 0) {
-            for (u_int ptx = 0; ptx < pte_count_per_page; ptx++) {
-                u_int pte_idx = pdx * pte_count_per_page + ptx;
+    uint32_t pte_count_per_page = (PAGE_SIZE / sizeof(Pte));
 
-                Pte current_pte = vpt[pte_idx];
+    u_reg_t current_vpn = 0;
 
-                if ((current_pte & PTE_V) != 0) {
-                    u_int vpn = (pdx << (PDSHIFT - PGSHIFT)) | ptx;
+    for (uint32_t p1x = 0; p1x <= P1X(USTACKTOP); p1x++) {
+        Pte current_p1entry = vp1[p1x];
 
-                    // 跳过超过USTACKTOP的虚拟页
-                    if (vpn >= VPN(USTACKTOP)) {
-                        break;
+        if ((current_p1entry & PTE_V) != 0) {
+            for (uint32_t p2x = 0; p2x < pte_count_per_page; p2x++) {
+                u_reg_t p2_idx = ((u_reg_t)p1x) * pte_count_per_page + p2x;
+
+                current_vpn = p2_idx << 9;
+
+                if (current_vpn >= VPN(USTACKTOP)) {
+                    break;
+                }
+
+                Pte current_p2entry = vp2[p2_idx];
+
+                if ((current_p2entry & PTE_V) != 0) {
+                    for (uint32_t p3x = 0; p3x < pte_count_per_page; p3x++) {
+                        u_reg_t p3_idx = p2_idx * pte_count_per_page + p3x;
+
+                        current_vpn = p3_idx;
+
+                        if (current_vpn >= VPN(USTACKTOP)) {
+                            break;
+                        }
+
+                        Pte current_p3entry = vp3[p3_idx];
+
+                        if ((current_p3entry & PTE_V) != 0) {
+                            duppage(child, current_vpn);
+                        }
                     }
-
-                    duppage(child, vpn);
                 }
             }
         }
     }
+
+    syscall_unmap_user_vpt();
 
     /* Step 4: Set up the child's tlb mod handler and set child's 'env_status'
      * to 'ENV_RUNNABLE'. */

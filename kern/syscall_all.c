@@ -1,14 +1,18 @@
 #include "error.h"
 #include "malta.h"
 #include "trap.h"
+#include "types.h"
 #include <env.h>
 #include <io.h>
 #include <mmu.h>
 #include <pmap.h>
+#include <print.h>
 #include <printk.h>
 #include <queue.h>
+#include <sbi.h>
 #include <sched.h>
 #include <syscall.h>
+#include <userspace.h>
 
 extern struct Env *curenv;
 
@@ -28,7 +32,7 @@ extern struct Env *curenv;
  *   - 会修改MALTA串口设备的硬件状态（通过printcharc）
  */
 void sys_putchar(int c) {
-    printcharc((char)c);
+    outputk(NULL, (const char *)&c, 1);
     return;
 }
 
@@ -59,14 +63,20 @@ void sys_putchar(int c) {
  *     3. 起始地址大于结束地址（整数溢出情况）
  *   - printcharc()会自动处理换行符转换（\n -> \r\n）
  */
-int sys_print_cons(const void *s, u_int num) {
-    if (((u_long)s + num) > UTOP || ((u_long)s) >= UTOP || (s > s + num)) {
+int sys_print_cons(const void *s, size_t num) {
+    if (((size_t)s + num) > UTOP || ((size_t)s) >= UTOP ||
+        ((size_t)s > (size_t)s + num)) {
         return -E_INVAL;
     }
-    u_int i;
-    for (i = 0; i < num; i++) {
-        printcharc(((char *)s)[i]);
+
+    if (num >= KERNEL_BUFFER_SIZE) {
+        return -E_INVAL;
     }
+
+    copy_user_space(s, KERNEL_BUFFER, num);
+
+    outputk(NULL, KERNEL_BUFFER, num);
+
     return 0;
 }
 
@@ -85,7 +95,7 @@ int sys_print_cons(const void *s, u_int num) {
  * 副作用：
  * - 无副作用（不修改任何全局状态）
  */
-u_int sys_getenvid(void) {
+uint32_t sys_getenvid(void) {
     // 直接从全局变量curenv中获取当前进程的环境ID
     // 注意：这里假设调用时curenv一定非NULL，否则会导致空指针解引用
     return curenv->env_id;
@@ -142,7 +152,7 @@ void __attribute__((noreturn)) sys_yield(void) {
  * - 修改TLB状态（通过env_destroy内部调用tlb_invalidate）
  * - 若目标进程是当前进程，会触发调度流程选择新进程运行
  */
-int sys_env_destroy(u_int envid) {
+int sys_env_destroy(uint32_t envid) {
     struct Env *e;
     try(envid2env(envid, &e, 1));
 
@@ -178,7 +188,7 @@ int sys_env_destroy(u_int envid) {
  * - 修改目标进程控制块的env_user_tlb_mod_entry字段
  */
 // Checked by DeepSeek-R1 20250422 15:49
-int sys_set_tlb_mod_entry(u_int envid, u_int func) {
+int sys_set_tlb_mod_entry(uint32_t envid, uint64_t func) {
     struct Env *env;
 
     /* Step 1: Convert the envid to its corresponding 'struct Env *' using
@@ -200,7 +210,7 @@ int sys_set_tlb_mod_entry(u_int envid, u_int func) {
  *
  *   注意：若是非法地址，函数返回1；若是合法地址，函数返回0
  */
-static inline int is_illegal_va(u_long va) { return va < UTEMP || va >= UTOP; }
+static inline int is_illegal_va(u_reg_t va) { return va < UTEMP || va >= UTOP; }
 
 /* 概述:
  *   检查['va', 'va' + len)是否是用户态虚拟地址范围（UTEMP <= x < UTOP）
@@ -213,7 +223,7 @@ static inline int is_illegal_va(u_long va) { return va < UTEMP || va >= UTOP; }
  *  - 若`va + len`溢出，认为是非法范围
  *
  */
-static inline int is_illegal_va_range(u_long va, u_int len) {
+static inline int is_illegal_va_range(u_reg_t va, u_reg_t len) {
     if (len == 0) {
         return 0;
     }
@@ -226,9 +236,12 @@ static inline int is_illegal_va_range(u_long va, u_int len) {
  *   若目标虚拟地址已存在映射，则静默解除原映射后建立新映射。
  *   权限检查要求目标进程必须是调用者或其子进程（通过envid2env的checkperm实现）。
  *
+ *   不默认设置PTE_R，调用者需要手动设置！
+ *
  * 实现差异：
- *   - 仅使用用户传入perm参数的低12位
- *   - 强制移除PTE_C_CACHEABLE和PTE_V标志（由page_insert内部添加）
+ *   - 仅使用用户传入perm参数的低10位
+ *   - 强制移除PTE_V标志（由page_insert内部添加）
+ *   - 设置PTE_USER标志
  *
  * Precondition：
  * - envid必须是有效的进程ID（0表示当前进程），且为当前进程或其直接子进程
@@ -255,7 +268,7 @@ static inline int is_illegal_va_range(u_long va, u_int len) {
  * - 增加新分配页面的引用计数
  */
 // Checked by DeepSeek-R1 20250422 20:26
-int sys_mem_alloc(u_int envid, u_int va, u_int perm) {
+int sys_mem_alloc(uint32_t envid, u_reg_t va, uint32_t perm) {
     struct Env *env;
     struct Page *pp;
 
@@ -284,10 +297,11 @@ int sys_mem_alloc(u_int envid, u_int va, u_int perm) {
     /* 注意：page_alloc不增加pp_ref，由后续page_insert处理 */
     try(page_alloc(&pp));
 
-    // 实现差异：只取用户传入的perm的低12位，并手动移除PTE_C_CACHEABLE、PTE_V
+    // 实现差异：只取用户传入的perm的低12位，并手动移除PTE_V
     // 以满足page_insert的Precondition
-    perm &= 0xFFF;
-    perm = perm & (~(PTE_C_CACHEABLE | PTE_V));
+    perm &= GENMASK(9, 0);
+    perm = perm & (~PTE_V);
+    perm = perm | PTE_USER;
 
     /* Step 4: Map the allocated page at 'va' with permission 'perm' using
      * 'page_insert'. */
@@ -304,9 +318,12 @@ int sys_mem_alloc(u_int envid, u_int va, u_int perm) {
  *   映射到目标进程(dstid)地址空间中'dstva'处，
  *   并设置权限位'perm'。映射后两个进程共享同一物理页。
  *
+ *   不默认设置PTE_R，调用者需要手动设置！
+ *
  * 实现差异：
- * - 仅取用户传入的perm低12位，并手动移除PTE_C_CACHEABLE和PTE_V标志位，
+ * - 仅取用户传入的perm低10位，并手动移除PTE_V标志位，
  *   以满足page_insert函数的Precondition要求
+ * - 设置PTE_USER标志
  *
  * Precondition：
  * -
@@ -331,8 +348,8 @@ int sys_mem_alloc(u_int envid, u_int va, u_int perm) {
  * - 若目标地址原有映射，会清除该映射并减少原物理页的引用计数
  */
 // Checked by DeepSeek-R1 20250422 20:58
-int sys_mem_map(u_int srcid, u_int srcva, u_int dstid, u_int dstva,
-                u_int perm) {
+int sys_mem_map(uint32_t srcid, u_reg_t srcva, uint32_t dstid, u_reg_t dstva,
+                uint32_t perm) {
     struct Env *srcenv;
     struct Env *dstenv;
     struct Page *pp;
@@ -377,8 +394,10 @@ int sys_mem_map(u_int srcid, u_int srcva, u_int dstid, u_int dstva,
      */
     // 实现差异：只取用户传入的perm的低12位，并手动移除PTE_C_CACHEABLE、PTE_V
     // 以满足page_insert的Precondition
-    perm &= 0xFFF;
-    perm = perm & (~(PTE_C_CACHEABLE | PTE_V));
+    perm &= GENMASK(9, 0);
+    perm = perm & (~PTE_V);
+    perm = perm | PTE_USER;
+
     return page_insert(dstenv->env_pgdir, dstenv->env_asid, pp, dstva, perm);
 }
 
@@ -413,7 +432,7 @@ int sys_mem_map(u_int srcid, u_int srcva, u_int dstid, u_int dstva,
  * - 修改进程envid的页表结构（通过page_remove）
  */
 // Checked by DeepSeek-R1 20250422 21:03
-int sys_mem_unmap(u_int envid, u_int va) {
+int sys_mem_unmap(uint32_t envid, u_reg_t va) {
     struct Env *e;
 
     /* Step 1: Check if 'va' is a legal user virtual address using
@@ -493,11 +512,11 @@ int sys_exofork(void) {
     struct Trapframe parent_tf = *(((struct Trapframe *)(KSTACKTOP)) - 1);
     e->env_tf = parent_tf;
 
-    /* Step 3: Set the new env's 'env_tf.regs[2]' to 0 to indicate the return
+    /* Step 3: Set the new env's 'env_tf.regs[10]' to 0 to indicate the return
      * value in child. */
     /* Exercise 4.9: Your code here. (3/4) */
     // 2 -> v0
-    e->env_tf.regs[2] = 0;
+    e->env_tf.regs[10] = 0;
 
     /* Step 4: Set up the new env's 'env_status' and 'env_pri'.  */
     /* Exercise 4.9: Your code here. (4/4) */
@@ -505,7 +524,7 @@ int sys_exofork(void) {
 
     e->env_pri = curenv->env_pri;
 
-    return e->env_id;
+    return (int)e->env_id;
 }
 
 /*
@@ -537,7 +556,7 @@ int sys_exofork(void) {
  * - 若目标进程是当前进程，会触发调度流程（通过 schedule）
  */
 // Checked by DeepSeek-R1 20250424 17:23
-int sys_set_env_status(u_int envid, u_int status) {
+int sys_set_env_status(uint32_t envid, uint32_t status) {
     struct Env *env;
 
     /* Step 1: Check if 'status' is valid. */
@@ -557,7 +576,7 @@ int sys_set_env_status(u_int envid, u_int status) {
      * changed. */
     /* Exercise 4.14: Your code here. (3/3) */
 
-    u_int pre_status = env->env_status;
+    uint32_t pre_status = env->env_status;
 
     /* 根据状态变化情况更新调度队列：
      * 1. 原状态不可运行 -> 新状态可运行：加入队列尾部
@@ -612,22 +631,29 @@ int sys_set_env_status(u_int envid, u_int status) {
  * - 修改目标进程的env_tf字段
  * - 若目标进程是当前进程，修改内核栈顶的陷阱帧内容
  */
-int sys_set_trapframe(u_int envid, struct Trapframe *tf) {
-    if (is_illegal_va_range((u_long)tf, sizeof *tf)) {
+int sys_set_trapframe(uint32_t envid, struct Trapframe *tf) {
+
+    struct Trapframe ktf;
+
+    if (is_illegal_va_range((u_reg_t)tf, sizeof(struct Trapframe))) {
         return -E_INVAL;
     }
+
+    copy_user_space(tf, &ktf, sizeof(struct Trapframe));
+
     struct Env *env;
     try(envid2env(envid, &env, 1));
+
     if (env == curenv) {
-        *((struct Trapframe *)KSTACKTOP - 1) = *tf;
-        // return `tf->regs[2]` instead of 0, because return value overrides
-        // regs[2] on current trapframe.
-        // 此函数返回后，返回值将被写入陷阱帧中的regs[2]
-        // 此处必须返回`tf->regs[2]`，否则，此处返回的值将覆盖陷阱帧中的regs[2]
+        *((struct Trapframe *)KSTACKTOP - 1) = ktf;
+        // return `tf->regs[10]` instead of 0, because return value overrides
+        // regs[10] on current trapframe.
+        // 此函数返回后，返回值将被写入陷阱帧中的regs[10]
+        // 此处必须返回`tf->regs[10]`，否则，此处返回的值将覆盖陷阱帧中的regs[10]
         // 导致目标进程的实际状态与`tf`中指定的不同
-        return tf->regs[2];
+        return ktf.regs[10];
     } else {
-        env->env_tf = *tf;
+        env->env_tf = ktf;
         return 0;
     }
 }
@@ -638,7 +664,32 @@ int sys_set_trapframe(u_int envid, struct Trapframe *tf) {
  * Post-Condition:
  * 	This function will halt the system.
  */
-void sys_panic(char *msg) { panic("%s", TRUP(msg)); }
+void sys_panic(char *msg) {
+
+    if ((size_t)msg >= ULIM) {
+        panic("invalid message");
+    }
+
+    allow_access_user_space();
+
+    size_t msg_len = strlen(msg);
+
+    disallow_access_user_space();
+
+    if ((size_t)(msg + msg_len) >= ULIM) {
+        panic("invalid message");
+    }
+
+    if (msg_len >= KERNEL_BUFFER_SIZE) {
+        panic("invalid message");
+    }
+
+    copy_user_space((void *)msg, KERNEL_BUFFER, msg_len);
+
+    ((char *)KERNEL_BUFFER)[msg_len] = '\0';
+
+    panic("%s", KERNEL_BUFFER);
+}
 
 /*
  * 概述：
@@ -665,7 +716,7 @@ void sys_panic(char *msg) { panic("%s", TRUP(msg)); }
  * - 通过系统调用返回值寄存器(v0)设置返回值为0
  */
 // Checked by DeepSeek-R1 20250424 13:28
-int sys_ipc_recv(u_int dstva) {
+int sys_ipc_recv(uint32_t dstva) {
     /* Step 1: Check if 'dstva' is either zero or a legal address. */
     if (dstva != 0 && is_illegal_va(dstva)) {
         return -E_INVAL;
@@ -689,9 +740,10 @@ int sys_ipc_recv(u_int dstva) {
     TAILQ_REMOVE(&env_sched_list, curenv, env_sched_link);
 
     /* Step 5: Give up the CPU and block until a message is received. */
-    // 2 -> v0
+    // 10 -> a0
     // 这相当于设置了本次系统调用的返回值为0
-    ((struct Trapframe *)KSTACKTOP - 1)->regs[2] = 0;
+
+    ((struct Trapframe *)KSTACKTOP - 1)->regs[10] = 0;
     schedule(1);
 }
 
@@ -699,7 +751,8 @@ int sys_ipc_recv(u_int dstva) {
  * 概述：
  *   尝试向目标环境'envid'发送一个'value'值（如果'srcva'不为0，则同时发送一个页面）。
  *   实现差异：
- *   - `perm`只取低12位，并清除了`PTE_V`和`PTE_C_CACHEABLE`
+ *   - `perm`只取低10位，并清除了`PTE_V`
+ *   - 将自动设置PTE_USER
  *
  * Precondition：
  * - `envid`对应的进程可以是任意合法进程，无需是当前进程的直接子进程
@@ -735,7 +788,8 @@ int sys_ipc_recv(u_int dstva) {
  *   这被认为是系统设计缺陷，但保留该效果
  */
 // Checked by DeepSeek-R1 20250424 13:38
-int sys_ipc_try_send(u_int envid, u_int value, u_int srcva, u_int perm) {
+int sys_ipc_try_send(uint32_t envid, uint64_t value, u_reg_t srcva,
+                     uint32_t perm) {
     struct Env *e;
     struct Page *p;
 
@@ -764,20 +818,15 @@ int sys_ipc_try_send(u_int envid, u_int value, u_int srcva, u_int perm) {
 
     // 此处清除了`perm`的高20位，以满足`page_insert`的Precondition
 
-    perm &= 0x0FFF;
+    perm &= GENMASK(9, 0);
 
-    // `PTE_V`和`PTE_C_CACHEABLE`将由`page_insert`设置，此处清除以满足其Precondition
-    // 虽然，即使不清除，也没有问题（）
-    // 注意：即使用户给出的权限中不含`PTE_V`和`PTE_C_CACHEABLE`，最终也将设置这些位
-    perm &= ~(PTE_V | PTE_C_CACHEABLE); // 清除非法标志位
+    perm |= PTE_USER;
 
     /* Step 4: Set the target's ipc fields. */
     e->env_ipc_value = value;
     e->env_ipc_from = curenv->env_id;
-    // 由于可能影响课上实验评测
-    // 撤销了对`fsipc_map`的修复以及对本函数的修改
-    // ref: https://os.buaa.edu.cn/discussion/457
-    e->env_ipc_perm = PTE_V | perm;
+
+    e->env_ipc_perm = perm;
     e->env_ipc_recving = 0;
 
     /* Step 5: Set the target's status to 'ENV_RUNNABLE' again and insert it to
@@ -808,7 +857,13 @@ int sys_ipc_try_send(u_int envid, u_int value, u_int srcva, u_int perm) {
 // XXX: kernel does busy waiting here, blocking all envs
 int sys_cgetc(void) {
     int ch;
-    while ((ch = scancharc()) == 0) {
+
+    while (1) {
+        struct sbiret ret = sbi_debug_console_read(1, (u_reg_t)&ch, 0);
+
+        if (ret.error == SBI_SUCCESS) {
+            break;
+        }
     }
     return ch;
 }
@@ -1003,6 +1058,23 @@ int sys_read_dev(u_int va, u_int pa, u_int len) {
 
     return 0;
 }
+
+void sys_map_user_vpt(void) {
+    if (curenv == NULL) {
+        panic("sys_map_user_vpt called while curenv is NULL");
+    }
+
+    map_user_vpt(curenv);
+}
+
+void sys_unmap_user_vpt(void) {
+    if (curenv == NULL) {
+        panic("sys_unmap_user_vpt called while curenv is NULL");
+    }
+
+    unmap_user_vpt(curenv);
+}
+
 void *syscall_table[MAX_SYSNO] = {
     [SYS_putchar] = sys_putchar,
     [SYS_print_cons] = sys_print_cons,
@@ -1022,6 +1094,8 @@ void *syscall_table[MAX_SYSNO] = {
     [SYS_cgetc] = sys_cgetc,
     [SYS_write_dev] = sys_write_dev,
     [SYS_read_dev] = sys_read_dev,
+    [SYS_map_user_vpt] = sys_map_user_vpt,
+    [SYS_unmap_user_vpt] = sys_unmap_user_vpt,
 };
 
 /*
@@ -1036,52 +1110,43 @@ void *syscall_table[MAX_SYSNO] = {
  * - 系统调用号'sysno'必须小于MAX_SYSNO
  *
  * Postcondition：
- * - 系统调用函数被正确调用，返回值存入Trapframe的$v0寄存器
- * - 若系统调用号无效，$v0寄存器被设置为-E_NO_SYS
+ * - 系统调用函数被正确调用，返回值存入Trapframe的$a0寄存器
+ * - 若系统调用号无效，$a0寄存器被设置为-E_NO_SYS
  * - 用户态的EPC寄存器值增加4，指向下一条指令
  *
  * 副作用：
  * - 修改了Trapframe结构体中的以下字段：
- *   - cp0_epc（增加4）
- *   - regs[2]（存储返回值或错误码）
+ *   - sepc（增加4）
+ *   - regs[10]（存储返回值或错误码）
  * - 可能通过系统调用函数修改其他全局状态（具体取决于调用的系统调用）
  */
 // Checked by DeepSeek-R1 20250422 20:01
 void do_syscall(struct Trapframe *tf) {
-    int (*func)(u_int, u_int, u_int, u_int, u_int);
+    int (*func)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
-    // 4 -> a0
-    int sysno = tf->regs[4];
+    // 10 -> a0
+    int sysno = tf->regs[10];
     if (sysno < 0 || sysno >= MAX_SYSNO) {
-        // 2 -> v0
-        tf->regs[2] = -E_NO_SYS;
+        // 10 -> a0
+        tf->regs[10] = (u_reg_t)(-E_NO_SYS);
         return;
     }
 
     /* Step 1: Add the EPC in 'tf' by a word (size of an instruction). */
     /* Exercise 4.2: Your code here. (1/4) */
     // 注意，执行syscall时，EPC中保存的是syscall指令的地址，为了正常返回，需要手动+4
-    tf->cp0_epc += 4;
+    tf->sepc += 4;
 
     /* Step 2: Use 'sysno' to get 'func' from 'syscall_table'. */
     /* Exercise 4.2: Your code here. (2/4) */
 
     func = syscall_table[sysno];
 
-    /* Step 3: First 3 args are stored in $a1, $a2, $a3. */
-    u_int arg1 = tf->regs[5];
-    u_int arg2 = tf->regs[6];
-    u_int arg3 = tf->regs[7];
-
-    /* Step 4: Last 2 args are stored in stack at [$sp + 16 bytes], [$sp + 20
-     * bytes]. */
-    u_int arg4, arg5;
-    /* Exercise 4.2: Your code here. (3/4) */
-    // 29 -> sp
-    unsigned long user_sp = tf->regs[29];
-
-    arg4 = *(u_int *)(user_sp + 16);
-    arg5 = *(u_int *)(user_sp + 20);
+    uint64_t arg1 = tf->regs[11];
+    uint64_t arg2 = tf->regs[12];
+    uint64_t arg3 = tf->regs[13];
+    uint64_t arg4 = tf->regs[14];
+    uint64_t arg5 = tf->regs[15];
 
     /* Step 5: Invoke 'func' with retrieved arguments and store its return value
      * to $v0 in 'tf'.
@@ -1090,6 +1155,6 @@ void do_syscall(struct Trapframe *tf) {
 
     int ret = func(arg1, arg2, arg3, arg4, arg5);
 
-    // 2 -> v0
-    tf->regs[2] = ret;
+    // 10 -> a0
+    tf->regs[10] = (u_reg_t)ret;
 }

@@ -1,8 +1,12 @@
-void mips_init(u_int argc, char **argv, char **penv, u_int ram_low_size) {
-    printk("init.c:\tmips_init() is called\n");
-    mips_detect_memory(ram_low_size);
-    mips_vm_init();
+void riscv64_init(u_reg_t hart_id, void *dtb_address) {
+    printk("init.c:\triscv64_init() is called\n");
+
+    exception_init();
+
+    riscv64_detect_memory();
+    riscv64_vm_init();
     page_init();
+
     env_init();
 
     envid2env_check();

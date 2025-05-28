@@ -10,7 +10,7 @@ link_script             := kernel.lds
 modules                 := lib init kern
 targets                 := $(mos_elf)
 
-user_modules			:= user/bare
+user_modules			:= user/bare user
 
 ifneq ($(prog),)
 dbg_elf                 := -ex "add-symbol-file $(prog)"

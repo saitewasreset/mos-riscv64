@@ -1,9 +1,12 @@
-void mips_init(u_int argc, char **argv, char **penv, u_int ram_low_size) {
-    printk("init.c:\tmips_init() is called\n");
+void riscv64_init(u_reg_t hart_id, void *dtb_address) {
+    printk("init.c:\triscv64_init() is called\n");
 
-    mips_detect_memory(ram_low_size);
-    mips_vm_init();
+    exception_init();
+
+    riscv64_detect_memory();
+    riscv64_vm_init();
     page_init();
+
     env_init();
 
     struct Env *ppb = ENV_CREATE_PRIORITY(test_ppb, 5);
@@ -11,5 +14,5 @@ void mips_init(u_int argc, char **argv, char **penv, u_int ram_low_size) {
     ppc->env_parent_id = ppb->env_id;
 
     schedule(0);
-    panic("init.c:\tend of mips_init() reached!");
+    panic("init.c:\tend of riscv64_init() reached!");
 }

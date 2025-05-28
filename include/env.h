@@ -40,31 +40,31 @@ struct Env {
     struct Trapframe
         env_tf; // 上次上下文切换时，保存的当前进程的上下文：通用寄存器、hi、lo、status、epc、cause、badvaddr
     LIST_ENTRY(Env) env_link; // 用于空闲Env链表(`env_free_list`)的指针域
-    u_int
+    uint32_t
         env_id; // 进程id，注意：即使不同进程复用了同一个Env，他们的`env_id`也不同
-    uint16_t env_asid;   // 该Env的ASID
-    u_int env_parent_id; // 该Env父进程的**env_id**
-    u_int env_status;    // 该Env的状态：ENV_FREE/ENV_RUNNABLE/ENV_NOT_RUNNABLE
+    uint16_t env_asid;      // 该Env的ASID
+    uint32_t env_parent_id; // 该Env父进程的**env_id**
+    uint32_t env_status; // 该Env的状态：ENV_FREE/ENV_RUNNABLE/ENV_NOT_RUNNABLE
     Pte *env_pgdir;      // 该Env的页目录地址（虚拟地址）
     TAILQ_ENTRY(Env) env_sched_link; // 用于调度队列(`env_sched_list`)的指针域
-    u_int env_pri;                   // 调度优先级
+    uint32_t env_pri;                // 调度优先级
 
     // Lab 4 IPC
-    u_int env_ipc_value; // IPC发送方发送的值
-    u_int env_ipc_from;  // IPC发送方的envid
+    uint64_t env_ipc_value; // IPC发送方发送的值
+    uint32_t env_ipc_from;  // IPC发送方的envid
     // 该Env是否正在阻塞地等待接收数据
     // 0 -> 不可接受数据 1 -> 等待接受数据中
-    u_int env_ipc_recving;
+    uint32_t env_ipc_recving;
     // 接收到的页面需要与自身哪个虚拟页面完成映射
-    u_int env_ipc_dstva;
+    uint64_t env_ipc_dstva;
     // 传递的页面的权限位
-    u_int env_ipc_perm;
+    uint32_t env_ipc_perm;
 
     // Lab 4 fault handling
-    u_int env_user_tlb_mod_entry; // userspace TLB Mod handler
+    uint64_t env_user_tlb_mod_entry; // userspace TLB Mod handler
 
     // Lab 6 scheduler counts
-    u_int env_runs; // number of times we've been env_run'ed
+    uint64_t env_runs; // number of times we've been env_run'ed
 };
 
 LIST_HEAD(Env_list, Env);

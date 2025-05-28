@@ -85,18 +85,18 @@
 
 // 硬件标志位：有效位，若为 0，所有匹配到该项的访存请求都会导致 TLB
 // 异常
-#define PTE_V 0x0001
+#define PTE_V 0x0001U
 
 // 硬件标志位：读权限位
-#define PTE_R 0x0002
+#define PTE_R 0x0002U
 
 // 硬件标志位：写权限位
-#define PTE_W 0x0004
+#define PTE_W 0x0004U
 
 // 硬件标志位：执行权限位
-#define PTE_X 0x0008
+#define PTE_X 0x0008U
 
-#define PTE_NON_LEAF 0
+#define PTE_NON_LEAF 0U
 #define PTE_RO (PTE_R)
 #define PTE_RW (PTE_R | PTE_W)
 #define PTE_XO (PTE_X)
@@ -106,20 +106,28 @@
 #define PTE_IS_NON_LEAF(pte) ((((u_reg_t)(pte)) & GENMASK(3, 1)) == 0)
 
 // 硬件标志位：用户态可访问
-#define PTE_USER 0x0010
+#define PTE_USER 0x0010U
 
 // 硬件标志位：全局位，当 TLB 表项中 G 被设置时，对于该项，TLB 匹配时将忽略
 // ASID，只依据虚拟页号匹配 相当于将该页映射到所有地址空间中
-#define PTE_GLOBAL 0x0020
+#define PTE_GLOBAL 0x0020U
 
 // 硬件标志位：访问位，硬件会在访问时将其置 1。
 // 内核可以定期清除并检查此位，用于页面置换算法。
-#define PTE_ACCESS 0x0040
+#define PTE_ACCESS 0x0040U
 
 // 硬件标志位：脏位，硬件会在写入时将其置 1。
-#define PTE_DIRTY 0x0080
+#define PTE_DIRTY 0x0080U
 
 #define PTE_SOFTFLAG_SHIFT 8
+
+// 软件标志位：PTE_COW
+
+#define PTE_COW (1U << 9)
+
+// 软件标志位：PTE_LIBRARY
+
+#define PTE_LIBRARY (1U << 8)
 
 /*
  * Part 2.  Our conventions.
@@ -260,14 +268,14 @@ typedef u_reg_t Pte;
     } while (0)
 
 // 判断指针是否指向用户空间的地址
-// 若指向用户空间，返回该指针；否则，返回指向 ULIM（0x8000 0000）的指针
+// 若指向用户空间，返回该指针；否则，返回指向 ULIM的指针
 // 注：typeof 是 GNU C 的拓展，用于表示某个变量的类型
 // typeof((_p)) __m_p = (_p);
 // 定义了一个变量__m_p，其类型为 typeof((_p))，即_p 的类型 其值为_p 的值
 #define TRUP(_p)                                                               \
     ({                                                                         \
         typeof((_p)) __m_p = (_p);                                             \
-        (u_int) __m_p > ULIM ? (typeof(_p))ULIM : __m_p;                       \
+        (u_reg_t) __m_p > ULIM ? (typeof(_p))ULIM : __m_p;                     \
     })
 
 /*

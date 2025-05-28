@@ -134,7 +134,7 @@ int elf_load_seg(Elf64_Phdr *ph, const void *bin, elf_mapper_t map_page,
     }
 
     for (; i < bin_size; i += PAGE_SIZE) {
-        if ((r = map_page(data, va + i, 0, perm, bin + i,
+        if ((r = map_page(data, va + i, 0, perm, (void *)((size_t)bin + i),
                           MIN(bin_size - i, PAGE_SIZE))) != 0) {
             return r;
         }

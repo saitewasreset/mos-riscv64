@@ -8,16 +8,13 @@
 #include <syscall.h>
 #include <trap.h>
 
-// 用户空间对进程自身页表的只读访问，可直接由VPN索引
-#define vpt ((const volatile Pte *)UVPT)
-// 用户空间对进程自身页目录的只读访问，可直接由PDX索引
-// 解释：看作虚拟内存中的一级页表，
-// 页表起始位置的VPN为UVPT >> PGSHIFT
-// 则页目录起始位置为：UVPT + (UVPT >> PGSHIFT) * PAGE_SIZE
-// = UVPT + (UVPT >> 10)
-// 由于页表对齐4MB边界，则只有PDX(UVPT)不为0，低位都为0
-// 故(UVPT >> 10) = (PDX(UVPT) << PGSHIFT)
-#define vpd ((const volatile Pde *)(UVPT + (PDX(UVPT) << PGSHIFT)))
+// 用户空间对进程自身三级页表的只读访问，可直接由VPN索引
+#define vp3 ((const volatile Pte *)UVPT)
+// 用户空间对进程自身二级页表的只读访问，可由(P1X(va) << 9) | P2X(va)索引
+#define vp2 ((const volatile Pte *)(UVPT + (UVPT >> 9)))
+// 用户空间对进程自身一级页表的只读访问，可由P1X(va)索引
+#define vp1 ((const volatile Pte *)(UVPT + (UVPT >> 9) + (UVPT >> 18)))
+
 // 用户空间对**所有**Env结构的只读访问
 #define envs ((const volatile struct Env *)UENVS)
 // 用户空间对**所有**物理页**结构**的只读访问
@@ -138,7 +135,7 @@ void syscall_putchar(int ch);
  *     3. 起始地址大于结束地址（整数溢出情况）
  *   - printcharc()会自动处理换行符转换（\n -> \r\n）
  */
-int syscall_print_cons(const void *str, u_int num);
+int syscall_print_cons(const void *str, size_t num);
 /*
  * 概述：
  *   获取当前进程的环境ID（env_id）。
@@ -154,7 +151,7 @@ int syscall_print_cons(const void *str, u_int num);
  * 副作用：
  * - 无副作用（不修改任何全局状态）
  */
-u_int syscall_getenvid(void);
+uint32_t syscall_getenvid(void);
 /*
  * 概述：
  *   主动放弃剩余的CPU时间片，触发进程调度。
@@ -201,7 +198,7 @@ void syscall_yield(void);
  * - 修改TLB状态（通过env_destroy内部调用tlb_invalidate）
  * - 若目标进程是当前进程，会触发调度流程选择新进程运行
  */
-int syscall_env_destroy(u_int envid);
+int syscall_env_destroy(uint32_t envid);
 /*
  * 概述：
  *   注册用户空间TLB Mod异常处理函数的入口地址。
@@ -228,7 +225,7 @@ int syscall_env_destroy(u_int envid);
  * 副作用：
  * - 修改目标进程控制块的env_user_tlb_mod_entry字段
  */
-int syscall_set_tlb_mod_entry(u_int envid, void (*func)(struct Trapframe *));
+int syscall_set_tlb_mod_entry(uint32_t envid, void (*func)(struct Trapframe *));
 /*
  * 概述：
  *   （含 TLB 操作）为指定进程分配物理内存页并建立虚拟地址映射。
@@ -263,7 +260,7 @@ int syscall_set_tlb_mod_entry(u_int envid, void (*func)(struct Trapframe *));
  * - 可能减少原映射页面的引用计数（若va已映射）
  * - 增加新分配页面的引用计数
  */
-int syscall_mem_alloc(u_int envid, void *va, u_int perm);
+int syscall_mem_alloc(uint32_t envid, void *va, uint32_t perm);
 /*
  * 概述：
  *   （含 TLB 操作）将源进程(srcid)地址空间中'srcva'处的物理页
@@ -296,8 +293,8 @@ int syscall_mem_alloc(u_int envid, void *va, u_int perm);
  * - 可能修改物理页的引用计数（通过page_insert内部处理）
  * - 若目标地址原有映射，会清除该映射并减少原物理页的引用计数
  */
-int syscall_mem_map(u_int srcid, void *srcva, u_int dstid, void *dstva,
-                    u_int perm);
+int syscall_mem_map(uint32_t srcid, void *srcva, uint32_t dstid, void *dstva,
+                    uint32_t perm);
 /*
  * 概述：
  *   （含 TLB 操作）在进程envid的地址空间中解除虚拟地址va的物理页映射。
@@ -328,7 +325,7 @@ int syscall_mem_map(u_int srcid, void *srcva, u_int dstid, void *dstva,
  *   - 无效化TLB中对应条目
  * - 修改进程envid的页表结构（通过page_remove）
  */
-int syscall_mem_unmap(u_int envid, void *va);
+int syscall_mem_unmap(uint32_t envid, void *va);
 /*
  * 概述：
  *   分配一个新的Env作为当前环境(curenv)的子进程，并初始化其运行上下文。
@@ -395,7 +392,7 @@ __attribute__((always_inline)) inline static int syscall_exofork(void) {
  * - 可能修改全局调度队列 env_sched_list 的结构
  * - 若目标进程是当前进程，会触发调度流程（通过 schedule）
  */
-int syscall_set_env_status(u_int envid, u_int status);
+int syscall_set_env_status(uint32_t envid, uint32_t status);
 /*
  * 概述：
  *   设置指定进程(envid)的陷阱帧(trapframe)为给定的tf值。
@@ -424,7 +421,7 @@ int syscall_set_env_status(u_int envid, u_int status);
  * - 修改目标进程的env_tf字段
  * - 若目标进程是当前进程，修改内核栈顶的陷阱帧内容
  */
-int syscall_set_trapframe(u_int envid, struct Trapframe *tf);
+int syscall_set_trapframe(uint32_t envid, struct Trapframe *tf);
 /* Overview:
  * 	Kernel panic with message `msg`.
  *
@@ -472,8 +469,8 @@ void syscall_panic(const char *msg) __attribute__((noreturn));
  * - 若srcva != 0但合法，dstva = 0，将导致接收者的[0x00000000, 0x00000FFF]被映射
  *   这被认为是系统设计缺陷，但保留该效果
  */
-int syscall_ipc_try_send(u_int envid, u_int value, const void *srcva,
-                         u_int perm);
+int syscall_ipc_try_send(uint32_t envid, uint64_t value, const void *srcva,
+                         uint32_t perm);
 /*
  * 概述：
  *   接收来自其他进程的消息（包含一个值和可选页面）。当前进程(curenv)将被阻塞，直到收到消息。
@@ -559,12 +556,15 @@ int syscall_write_dev(void *va, u_int dev, u_int len);
  */
 int syscall_read_dev(void *va, u_int dev, u_int len);
 
+void syscall_map_user_vpt(void);
+void syscall_unmap_user_vpt(void);
+
 // ipc.c
-void ipc_send(u_int whom, u_int val, const void *srcva, u_int perm);
-u_int ipc_recv(u_int *whom, void *dstva, u_int *perm);
+void ipc_send(uint32_t whom, uint64_t val, const void *srcva, uint32_t perm);
+uint64_t ipc_recv(uint32_t *whom, void *dstva, uint32_t *perm);
 
 // wait.c
-void wait(u_int envid);
+void wait(uint32_t envid);
 
 // console.c
 int opencons(void);

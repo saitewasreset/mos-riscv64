@@ -467,6 +467,8 @@ enum {
      *	* ---------------------------------*
      */
     SYS_read_dev,
+    SYS_map_user_vpt,
+    SYS_unmap_user_vpt,
     MAX_SYSNO,
 };
 

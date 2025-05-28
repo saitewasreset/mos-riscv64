@@ -26,7 +26,7 @@ int main() {
     } else {
         user_halt("syscall_mem_alloc\n");
     }
-    r = syscall_mem_alloc(me, (void *)KERNBASE, 0); // va illegal
+    r = syscall_mem_alloc(me, (void *)BASE_ADDR_IMM, 0); // va illegal
     if (r < 0) {
         debugf("syscall_mem_alloc_ok_4\n");
     } else {
@@ -57,7 +57,7 @@ int main() {
     } else {
         user_halt("syscall_mem_map\n");
     }
-    r = syscall_mem_map(me, (void *)UTEMP, PPC, (void *)KERNBASE,
+    r = syscall_mem_map(me, (void *)UTEMP, PPC, (void *)BASE_ADDR_IMM,
                         0); // dstva illegal
     if (r < 0) {
         debugf("syscall_mem_map_ok_3\n");
