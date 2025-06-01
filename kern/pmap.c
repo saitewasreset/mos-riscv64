@@ -408,6 +408,36 @@ static int pgdir_walk(Pte *pgdir, u_reg_t va, int create, Pte **ppte) {
     return 0;
 }
 
+void map_mem(Pte *pgdir, u_reg_t va, u_reg_t pa, size_t len, uint32_t perm) {
+    len = ROUND(len, PAGE_SIZE);
+
+    if (va % PAGE_SIZE != 0) {
+        panic("va 0x%016lx not aligned to PAGE_SIZE", va);
+    }
+
+    if (pa % PAGE_SIZE != 0) {
+        panic("pa 0x%016lx not aligned to PAGE_SIZE", pa);
+    }
+
+    for (u_reg_t offset = 0; offset < len; offset += PAGE_SIZE) {
+        u_reg_t current_va = va + offset;
+        u_reg_t current_pa = pa + offset;
+
+        Pte *pte = NULL;
+
+        pgdir_walk(pgdir, current_va, 1, &pte);
+
+        if (pte == NULL) {
+            panic("failed to get page table entry for va 0x%016lx\n",
+                  current_va);
+        }
+
+        *pte = ((PPN(pa) << 10) | perm);
+    }
+
+    tlb_flush_all();
+}
+
 /* 概述：
  *   （含 TLB 操作）在虚拟地址空间`asid`中，
  *    将物理页'pp'映射到虚拟地址'va'，并按需增加物理页的引用计数。

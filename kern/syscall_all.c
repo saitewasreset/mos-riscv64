@@ -3,6 +3,7 @@
 #include "trap.h"
 #include "types.h"
 #include <env.h>
+#include <fork.h>
 #include <io.h>
 #include <mmu.h>
 #include <pmap.h>
@@ -518,11 +519,15 @@ int sys_exofork(void) {
     // 2 -> v0
     e->env_tf.regs[10] = 0;
 
+    dup_userspace(curenv->env_pgdir, e->env_pgdir, e->env_asid);
+
     /* Step 4: Set up the new env's 'env_status' and 'env_pri'.  */
     /* Exercise 4.9: Your code here. (4/4) */
-    e->env_status = ENV_NOT_RUNNABLE;
+    e->env_status = ENV_RUNNABLE;
 
     e->env_pri = curenv->env_pri;
+
+    TAILQ_INSERT_HEAD(&env_sched_list, e, env_sched_link);
 
     return (int)e->env_id;
 }

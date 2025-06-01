@@ -18,3 +18,7 @@ END(tlb_invalidate, 16)
 BEGIN(tlb_flush_asid, 16)
     sfence.vma zero, a0
 END(tlb_flush_asid, 16)
+
+BEGIN(tlb_flush_all, 16)
+    sfence.vma
+END(tlb_flush_all, 16)

@@ -16,12 +16,12 @@ ifneq ($(prog),)
 dbg_elf                 := -ex "add-symbol-file $(prog)"
 endif
 
-
 objects                 := $(addsuffix /*.o, $(modules)) $(addsuffix /*.x, $(user_modules))
 modules                 += $(user_modules)
 
 CFLAGS                  += -DLAB=$(shell echo $(lab) | cut -f1 -d_)
 QEMU_FLAGS              += -machine virt -m 2G -nographic \
+						-drive file=rootfs.img,format=raw,if=none,id=hd0 -device virtio-blk-device,drive=hd0 \
 						-no-reboot -monitor telnet:127.0.0.1:23334,server,nowait
 
 .PHONY: all test tools $(modules) clean run dbg_run dbg_pts dbg objdump fs-image clean-and-all connect

@@ -273,6 +273,14 @@ void env_init(void) {
     base_pgdir[P1X(HIGH_ADDR_IMM)] =
         ((LOW_ADDR_IMM >> PAGE_SHIFT) << 10) | PTE_RWX | PTE_GLOBAL | PTE_V;
 
+    // 映射MMIO区域
+    // map_segment(base_pgdir, 0, VIRTIO_BEGIN_ADDRESS, MMIO_BEGIN_VA,
+    //            MMIO_END_VA - MMIO_BEGIN_VA, PTE_RW | PTE_GLOBAL);
+
+    // 注意，只有被空闲页链表管理的内存（DRAM），才能使用map_segment函数
+    map_mem(base_pgdir, VIRTIO_BEGIN_ADDRESS, MMIO_BEGIN_VA,
+            MMIO_END_VA - MMIO_BEGIN_VA, PTE_RW | PTE_GLOBAL);
+
     // 映射Pages区域
     map_segment(base_pgdir, 0, PADDR(pages), UPAGES,
                 ROUND(npage * sizeof(struct Page), PAGE_SIZE),
@@ -337,6 +345,9 @@ static int env_setup_vm(struct Env *e) {
     // 复制直接映射区域的页目录映射
 
     e->env_pgdir[P1X(HIGH_ADDR_IMM)] = base_pgdir[P1X(HIGH_ADDR_IMM)];
+
+    // 复制MMIO区域的映射
+    e->env_pgdir[P1X(MMIO_BEGIN_VA)] = base_pgdir[P1X(MMIO_BEGIN_VA)];
 
     /* Step 3: Map its own page table at 'UVPT' with readonly permission.
      * As a result, user programs can read its page table through 'UVPT' */

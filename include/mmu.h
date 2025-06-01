@@ -6,13 +6,20 @@
  */
 
 #include <bitops.h>
-#define HIGH_ADDR_IMM 0xFFFFFFC000000000
-#define LOW_ADDR_IMM 0x80000000
-#define LOAD_ADDR_IMM 0x80200000
-#define BASE_ADDR_IMM 0xFFFFFFC000200000
-#define KERNEL_END_ADDR_BEFORE_PAGING_IMM 0x81000000
+
+#define HIGH_ADDR_IMM 0xFFFFFFC000000000ULL
+#define LOW_ADDR_IMM 0x80000000ULL
+#define LOAD_ADDR_IMM 0x80200000ULL
+#define BASE_ADDR_IMM 0xFFFFFFC000200000ULL
+#define KERNEL_END_ADDR_BEFORE_PAGING_IMM 0x81000000ULL
 
 #define HIGH_ADDR_OFFSET ((HIGH_ADDR_IMM) - (LOW_ADDR_IMM))
+
+#define VIRTIO_BEGIN_ADDRESS 0x10001000ULL
+#define VIRTIO_COUNT 8
+
+#define MMIO_BEGIN_VA 0xFFFFFFC080000000ULL
+#define MMIO_END_VA ((MMIO_BEGIN_VA) + (VIRTIO_COUNT) * (PAGE_SIZE))
 
 // 可用的 ASID 数量
 #define NASID 256
@@ -310,5 +317,8 @@ extern void tlb_invalidate(uint16_t asid, uint16_t va);
  * 否则，不会发生任何操作。
  */
 extern void tlb_flush_asid(u_int asid);
+
+extern void tlb_flush_all();
+
 #endif //!__ASSEMBLER__
 #endif // !_MMU_H_

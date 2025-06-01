@@ -9,6 +9,8 @@
 
 extern Pte *cur_pgdir;
 
+// Pte *kernel_boot_pgdir = (Pte *)(0xFFFFFFC001000000ULL);
+
 LIST_HEAD(Page_list, Page);
 typedef LIST_ENTRY(Page) Page_LIST_entry_t;
 
@@ -333,6 +335,8 @@ struct Page *page_lookup(Pte *pgdir, u_long va, Pte **ppte);
  *
  */
 void page_remove(Pte *pgdir, u_int asid, u_long va);
+
+void map_mem(Pte *pgdir, u_reg_t va, u_reg_t pa, size_t len, uint32_t perm);
 
 extern struct Page *pages;
 
