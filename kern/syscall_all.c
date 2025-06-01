@@ -1,5 +1,4 @@
 #include "error.h"
-#include "malta.h"
 #include "trap.h"
 #include "types.h"
 #include <env.h>
@@ -14,6 +13,7 @@
 #include <sched.h>
 #include <syscall.h>
 #include <userspace.h>
+#include <virt.h>
 
 extern struct Env *curenv;
 
@@ -891,15 +891,22 @@ int sys_cgetc(void) {
  *   - 地址溢出检查防止整数回绕（如0xFFFFFFFF + 4）
  */
 // Checked by DeepSeek-R1 20250508 16:35
-static int is_illegal_device_pa_range(u_int pa, u_int len) {
-    static u_int valid_base_address[2] = {MALTA_SERIAL_BASE, MALTA_IDE_BASE};
-    static u_int valid_len[2] = {0x20, 0x8};
+static int is_illegal_device_pa_range(u_reg_t pa, u_reg_t len) {
+    static u_reg_t valid_base_address[VIRTIO_COUNT] = {
+        0x0000000010001000, 0x0000000010002000, 0x0000000010003000,
+        0x0000000010004000, 0x0000000010005000, 0x0000000010006000,
+        0x0000000010007000, 0x0000000010008000};
+    static u_reg_t valid_len[VIRTIO_COUNT] = {
+        VIRTIO_ADDRESS_SPACE_SIZE, VIRTIO_ADDRESS_SPACE_SIZE,
+        VIRTIO_ADDRESS_SPACE_SIZE, VIRTIO_ADDRESS_SPACE_SIZE,
+        VIRTIO_ADDRESS_SPACE_SIZE, VIRTIO_ADDRESS_SPACE_SIZE,
+        VIRTIO_ADDRESS_SPACE_SIZE, VIRTIO_ADDRESS_SPACE_SIZE};
 
     if (pa + len < pa) {
         return 1;
     }
 
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < VIRTIO_COUNT; i++) {
         if ((pa >= valid_base_address[i]) &&
             (pa + len <= (valid_base_address[i] + valid_len[i]))) {
             return 0;
@@ -914,14 +921,14 @@ static int is_illegal_device_pa_range(u_int pa, u_int len) {
  *   检查虚拟地址va是否按len字节对齐
  *
  * Precondition：
- *   - len必须为1、2或4
+ *   - len必须为1、2、4、8
  *
  * Postcondition：
  *   - 返回0表示地址对齐合法
  *   - 返回1表示地址未按要求对齐
  */
 // Checked by DeepSeek-R1 20250508 16:35
-static int is_illegal_align(u_int va, u_int len) {
+static int is_illegal_align(u_reg_t va, u_reg_t len) {
     if (len == 1) {
         return 0;
     } else if (len == 2) {
@@ -936,6 +943,12 @@ static int is_illegal_align(u_int va, u_int len) {
         } else {
             return 1;
         }
+    } else if (len == 8) {
+        if (va % 8 == 0) {
+            return 0;
+        } else {
+            return 1;
+        }
     } else {
         panic("unreachable code: len shoudle be 1 or 2 or 4");
         return 1;
@@ -945,13 +958,13 @@ static int is_illegal_align(u_int va, u_int len) {
 /*
  * 概述：
  *   系统调用函数，用于将用户空间从`va`开始长`len`的数据写入设备物理地址`pa`。
- *   根据数据长度选择对应的iowrite函数（8/16/32位）。
+ *   根据数据长度选择对应的iowrite函数（8/16/32位/64位）。
  *
  * Precondition：
- *   - len必须为1、2或4字节，否则返回-E_INVAL
+ *   - len必须为1、2、4、8字节，否则返回-E_INVAL
  *   - 用户虚拟地址[va, va+len)必须合法（UTEMP <= x < UTOP）
  *   - 虚拟地址va必须按len字节对齐（len=2时2字节对齐，len=4时4字节对齐）
- *   - 物理地址pa必须属于有效设备范围（console或IDE控制器地址区间）
+ *   - 物理地址pa必须属于有效设备范围（MMIO）
  *
  * Postcondition：
  *   - 成功时：用户数据[va, va+len)被写入物理地址pa，返回0
@@ -960,20 +973,12 @@ static int is_illegal_align(u_int va, u_int len) {
  * 副作用：
  *   - 通过iowrite函数直接修改设备寄存器状态
  *   - 可能触发硬件设备的I/O操作（如串口输出、磁盘写入）
- *
- *  All valid device and their physical address ranges:
- *	* ---------------------------------*
- *	|   device   | start addr | length |
- *	* -----------+------------+--------*
- *	|  console   | 0x180003f8 | 0x20   |
- *	|  IDE disk  | 0x180001f0 | 0x8    |
- *	* ---------------------------------*
  */
 // Checked by DeepSeek-R1 20250508 16:35
-int sys_write_dev(u_int va, u_int pa, u_int len) {
+int sys_write_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
     /* Exercise 5.1: Your code here. (1/2) */
 
-    if ((len != 1) && (len != 2) && (len != 4)) {
+    if ((len != 1) && (len != 2) && (len != 4) && (len != 8)) {
         return -E_INVAL;
     }
 
@@ -990,13 +995,27 @@ int sys_write_dev(u_int va, u_int pa, u_int len) {
     }
 
     if (len == 1) {
-        iowrite8(*((uint8_t *)(size_t)va), pa);
+        uint8_t data = 0;
+        copy_user_space((void *)va, &data, 1);
+
+        iowrite8(data, pa);
     } else if (len == 2) {
-        iowrite16(*((uint16_t *)(size_t)va), pa);
+        uint16_t data = 0;
+        copy_user_space((void *)va, &data, 2);
+
+        iowrite16(data, pa);
     } else if (len == 4) {
-        iowrite32(*((uint32_t *)(size_t)va), pa);
+        uint32_t data = 0;
+        copy_user_space((void *)va, &data, 4);
+
+        iowrite32(data, pa);
+    } else if (len == 4) {
+        uint64_t data = 0;
+        copy_user_space((void *)va, &data, 8);
+
+        iowrite64(data, pa);
     } else {
-        panic("unreachable code: len shoudle be 1 or 2 or 4");
+        panic("unreachable code: len shoudle be 1 or 2 or 4 or 8");
     }
 
     return 0;
@@ -1007,10 +1026,10 @@ int sys_write_dev(u_int va, u_int pa, u_int len) {
  *   系统调用函数，用于从设备物理地址读取数据到用户空间。根据数据长度选择对应的ioread函数（8/16/32位）。
  *
  * Precondition：
- *   - len必须为1、2或4字节，否则返回-E_INVAL
+ *   - len必须为1、2、4、8字节，否则返回-E_INVAL
  *   - 用户虚拟地址[va, va+len)必须合法（UTEMP <= x < UTOP）
  *   - 虚拟地址va必须按len字节对齐（len=2时2字节对齐，len=4时4字节对齐）
- *   - 物理地址pa必须属于有效设备范围（console或IDE控制器地址区间）
+ *   - 物理地址pa必须属于有效设备范围（MMIO）
  *
  * Postcondition：
  *   - 成功时：设备数据从pa读取到用户空间[va, va+len)，返回0
@@ -1019,23 +1038,12 @@ int sys_write_dev(u_int va, u_int pa, u_int len) {
  * 副作用：
  *   - 可能改变设备状态（如读取状态寄存器可能清除中断标志）
  *   - 通过直接内存访问操作设备寄存器
- *
- * 关键点：
- *   - 通过KSEG1地址空间进行非缓存访问
- *
- *  All valid device and their physical address ranges:
- *	* ---------------------------------*
- *	|   device   | start addr | length |
- *	* -----------+------------+--------*
- *	|  console   | 0x180003f8 | 0x20   |
- *	|  IDE disk  | 0x180001f0 | 0x8    |
- *	* ---------------------------------*
  */
 // Checked by DeepSeek-R1 20250508 16:35
-int sys_read_dev(u_int va, u_int pa, u_int len) {
+int sys_read_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
     /* Exercise 5.1: Your code here. (2/2) */
 
-    if ((len != 1) && (len != 2) && (len != 4)) {
+    if ((len != 1) && (len != 2) && (len != 4) && (len != 8)) {
         return -E_INVAL;
     }
 
@@ -1052,13 +1060,23 @@ int sys_read_dev(u_int va, u_int pa, u_int len) {
     }
 
     if (len == 1) {
-        *((uint8_t *)(size_t)va) = ioread8(pa);
+        uint8_t data = ioread8(pa);
+
+        copy_user_space(&data, (void *)va, 1);
     } else if (len == 2) {
-        *((uint16_t *)(size_t)va) = ioread16(pa);
+        uint16_t data = ioread16(pa);
+
+        copy_user_space(&data, (void *)va, 2);
     } else if (len == 4) {
-        *((uint32_t *)(size_t)va) = ioread32(pa);
+        uint32_t data = ioread32(pa);
+
+        copy_user_space(&data, (void *)va, 4);
+    } else if (len == 8) {
+        uint64_t data = ioread64(pa);
+
+        copy_user_space(&data, (void *)va, 8);
     } else {
-        panic("unreachable code: len shoudle be 1 or 2 or 4");
+        panic("unreachable code: len shoudle be 1 or 2 or 4 or 8");
     }
 
     return 0;

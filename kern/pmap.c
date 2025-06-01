@@ -1,7 +1,6 @@
 #include <bitops.h>
 #include <env.h>
 #include <error.h>
-#include <malta.h>
 #include <mmu.h>
 #include <pmap.h>
 #include <printk.h>

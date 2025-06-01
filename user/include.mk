@@ -10,6 +10,7 @@ USERLIB              := entry.o \
 			syscall_lib.o \
 			ipc.o
 
+
 ifeq ($(call lab-ge,5), true)
 	INITAPPS     += devtst.x fstest.x
 	USERLIB      += fd.o \

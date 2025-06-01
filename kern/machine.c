@@ -1,4 +1,3 @@
-#include <malta.h>
 #include <mmu.h>
 #include <printk.h>
 #include <sbi.h>
