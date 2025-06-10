@@ -138,28 +138,35 @@ void do_clock(struct Trapframe *tf) { schedule(0); }
 void do_page_fault(struct Trapframe *tf) {
     // 对于内核代码发生的缺页异常，使用do_kernel_exception处理
     if ((tf->sepc) >= BASE_ADDR_IMM && (tf->sepc < (u_reg_t)_kernel_end)) {
-        do_kernel_exception(tf);
-    }
+        // 若地址属于允许分配的地址，进行分配
 
-    if (curenv == NULL) {
-        panic("Page fault from user space but curenv is NULL!");
-    }
-
-    Pte *pte = NULL;
-
-    if (page_lookup(curenv->env_pgdir, tf->badvaddr, &pte) == NULL) {
-        // 对于用户程序，若请求的页不存在，直接分配页
-        passive_alloc(tf->badvaddr, curenv->env_pgdir, curenv->env_id);
-    } else {
-        // 对于用户程序，若请求的页存在，检查是否是CoW页
-
-        if ((*pte & PTE_COW) != 0) {
-            do_cow(tf);
+        if (tf->badvaddr >= KMALLOC_BEGIN_VA && tf->badvaddr < KMALLOC_END_VA) {
+            kernel_passive_alloc(tf->badvaddr);
         } else {
-            // 访问违例
+            do_kernel_exception(tf);
+        }
+    } else {
+        // 异常发生在用户区域代码
+        if (curenv == NULL) {
+            panic("Page fault from user space but curenv is NULL!");
+        }
 
-            panic("Access violation for va = 0x%016lx pte = %016lx\n",
-                  tf->badvaddr, *pte);
+        Pte *pte = NULL;
+
+        if (page_lookup(curenv->env_pgdir, tf->badvaddr, &pte) == NULL) {
+            // 对于用户程序，若请求的页不存在，直接分配页
+            passive_alloc(tf->badvaddr, curenv->env_pgdir, curenv->env_id);
+        } else {
+            // 对于用户程序，若请求的页存在，检查是否是CoW页
+
+            if ((*pte & PTE_COW) != 0) {
+                do_cow(tf);
+            } else {
+                // 访问违例
+
+                panic("Access violation for va = 0x%016lx pte = %016lx\n",
+                      tf->badvaddr, *pte);
+            }
         }
     }
 }

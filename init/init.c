@@ -1,5 +1,6 @@
 #include <asm/asm.h>
 #include <env.h>
+#include <kmalloc.h>
 #include <machine.h>
 #include <pmap.h>
 #include <printk.h>
@@ -28,6 +29,8 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
     riscv64_detect_memory();
     riscv64_vm_init();
     page_init();
+
+    kmalloc_init();
 
     // physical_memory_manage_check();
 

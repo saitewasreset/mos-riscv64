@@ -1,1 +1,1 @@
-targets             := machine.o printk.o panic.o backtrace.o pmap.o tlb_asm.o traps.o entry.o env_asm.o timer.o env.o sched.o tlbex.o syscall_all.o userspace.o userspace_asm.o virtio.o fork.o
+targets             := machine.o printk.o panic.o backtrace.o pmap.o tlb_asm.o traps.o entry.o env_asm.o timer.o env.o sched.o tlbex.o syscall_all.o userspace.o userspace_asm.o virtio.o fork.o kmalloc.o

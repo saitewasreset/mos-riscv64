@@ -273,6 +273,11 @@ void env_init(void) {
     base_pgdir[P1X(HIGH_ADDR_IMM)] =
         ((LOW_ADDR_IMM >> PAGE_SHIFT) << 10) | PTE_RWX | PTE_GLOBAL | PTE_V;
 
+    // 映射kmalloc区域
+
+    base_pgdir[P1X(KMALLOC_BEGIN_VA)] =
+        kernel_boot_pgdir[P1X(KMALLOC_BEGIN_VA)];
+
     // 映射MMIO区域
     // map_segment(base_pgdir, 0, VIRTIO_BEGIN_ADDRESS, MMIO_BEGIN_VA,
     //            MMIO_END_VA - MMIO_BEGIN_VA, PTE_RW | PTE_GLOBAL);
@@ -348,6 +353,9 @@ static int env_setup_vm(struct Env *e) {
 
     // 复制MMIO区域的映射
     e->env_pgdir[P1X(MMIO_BEGIN_VA)] = base_pgdir[P1X(MMIO_BEGIN_VA)];
+
+    // 复制kmalloc区域的映射
+    e->env_pgdir[P1X(KMALLOC_BEGIN_VA)] = base_pgdir[P1X(KMALLOC_BEGIN_VA)];
 
     /* Step 3: Map its own page table at 'UVPT' with readonly permission.
      * As a result, user programs can read its page table through 'UVPT' */

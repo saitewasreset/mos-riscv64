@@ -22,6 +22,8 @@ struct Page_list page_free_list;
 
 extern char _kernel_end[];
 
+Pte *kernel_boot_pgdir = (Pte *)(0xFFFFFFC001000000ULL);
+
 /* 概述：
  *
  *   使用入参`_memsize`（来自 bootloader）设置`memsize`、`npage`

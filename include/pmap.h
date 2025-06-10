@@ -9,7 +9,7 @@
 
 extern Pte *cur_pgdir;
 
-// Pte *kernel_boot_pgdir = (Pte *)(0xFFFFFFC001000000ULL);
+extern Pte *kernel_boot_pgdir;
 
 LIST_HEAD(Page_list, Page);
 typedef LIST_ENTRY(Page) Page_LIST_entry_t;
@@ -344,5 +344,7 @@ void physical_memory_manage_check(void);
 void page_check(void);
 
 void passive_alloc(u_reg_t va, Pte *pgdir, uint16_t asid);
+
+void kernel_passive_alloc(u_reg_t va);
 
 #endif /* _PMAP_H_ */
