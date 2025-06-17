@@ -5,6 +5,7 @@
 #include <stdarg.h>
 
 void printk(const char *fmt, ...);
+void debugk(const char *scope, const char *fmt, ...);
 
 void _panic(const char *, int, const char *, const char *, ...)
     __attribute__((noreturn));

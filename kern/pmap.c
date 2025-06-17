@@ -7,6 +7,8 @@
 #include <queue.h>
 #include <types.h>
 
+extern struct Env envs[NENV];
+
 /* These variables are set by mips_detect_memory(ram_low_size); */
 static u_long memsize; /* 最大可用的物理地址，由`riscv64_detect_memory`初始化 */
 u_long npage;          /* 最大可用的物理页数，由`riscv64_detect_memory`初始化 */
@@ -409,6 +411,9 @@ static int pgdir_walk(Pte *pgdir, u_reg_t va, int create, Pte **ppte) {
     return 0;
 }
 
+// 在`pgdir`对应的页表中，从`va`开始，映射长度为`len`，标志位为`perm`的内存，指向物理地址`pa`
+// 该函数仅应当用于不受空闲链表管理的内存（例如，MMIO）
+// `perm`仅应当设置低10位
 void map_mem(Pte *pgdir, u_reg_t va, u_reg_t pa, size_t len, uint32_t perm) {
     len = ROUND(len, PAGE_SIZE);
 
@@ -433,10 +438,28 @@ void map_mem(Pte *pgdir, u_reg_t va, u_reg_t pa, size_t len, uint32_t perm) {
                   current_va);
         }
 
-        *pte = ((PPN(pa) << 10) | perm);
+        *pte = ((PPN(pa + offset) << 10) | perm);
     }
 
     tlb_flush_all();
+}
+
+// 在内核启动时所用的页表，以及所有进程的页表中
+// 从`va`开始，映射长度为`len`，标志位为`perm`的内存，指向物理地址`pa`
+// 该函数仅应当用于不受空闲链表管理的内存（例如，MMIO）
+// `perm`仅应当设置低10位
+//
+// Precondition：Env应当已经初始化
+void kmap(u_reg_t va, u_reg_t pa, size_t len, uint32_t perm) {
+    map_mem(kernel_boot_pgdir, va, pa, len, perm);
+
+    for (size_t i = 0; i < NENV; i++) {
+        struct Env *current_env = &envs[i];
+
+        if (current_env->env_status != ENV_FREE) {
+            map_mem(current_env->env_pgdir, va, pa, len, perm);
+        }
+    }
 }
 
 /* 概述：

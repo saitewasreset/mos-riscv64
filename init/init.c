@@ -1,4 +1,5 @@
 #include <asm/asm.h>
+#include <device_tree.h>
 #include <env.h>
 #include <kmalloc.h>
 #include <machine.h>
@@ -8,6 +9,7 @@
 #include <sched.h>
 #include <trap.h>
 #include <types.h>
+#include <virtio.h>
 
 /*
  * Note:
@@ -41,6 +43,12 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
     // envid2env_check();
 
     env_check();
+
+    // Device
+
+    device_tree_init(dtb_address);
+
+    virtio_init();
 
     printk("My life for Super Earth!\n");
     // lab2:

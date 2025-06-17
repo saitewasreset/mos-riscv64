@@ -1,4 +1,5 @@
 #include <mmu.h>
+#include <pmap.h>
 #include <print.h>
 #include <printk.h>
 #include <sbi.h>
@@ -7,7 +8,8 @@
 
 /* Lab 1 Key Code "outputk" */
 void outputk(void *data, const char *buf, size_t len) {
-    sbi_debug_console_write(len, (u_reg_t)PADDR(buf), 0);
+    sbi_debug_console_write(len, (u_reg_t)va2pa(kernel_boot_pgdir, (u_long)buf),
+                            0);
 }
 /* End of Key Code "outputk" */
 
@@ -19,6 +21,15 @@ void printk(const char *fmt, ...) {
     va_end(ap);
 }
 /* End of Key Code "printk" */
+
+void debugk(const char *scope, const char *fmt, ...) {
+    printk("%s: ", scope);
+
+    va_list ap;
+    va_start(ap, fmt);
+    vprintfmt(outputk, NULL, fmt, ap);
+    va_end(ap);
+}
 
 void print_tf(struct Trapframe *tf) {
     printk("\n>>> Trapframe:\n");

@@ -21,6 +21,8 @@
 
 #define HIGH_ADDR_OFFSET ((HIGH_ADDR_IMM) - (LOW_ADDR_IMM))
 
+#define DTB_BEGIN_VA 0xFFFFFFC040000000ULL
+
 // 可用的 ASID 数量
 #define NASID 256
 // 页大小

@@ -337,6 +337,7 @@ struct Page *page_lookup(Pte *pgdir, u_long va, Pte **ppte);
 void page_remove(Pte *pgdir, u_int asid, u_long va);
 
 void map_mem(Pte *pgdir, u_reg_t va, u_reg_t pa, size_t len, uint32_t perm);
+void kmap(u_reg_t va, u_reg_t pa, size_t len, uint32_t perm);
 
 extern struct Page *pages;
 

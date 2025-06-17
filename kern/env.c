@@ -268,23 +268,10 @@ void env_init(void) {
 
     base_pgdir = (Pte *)page2kva(p);
 
-    // 映射直接内存访问区域（内核态），一级巨页
-
-    base_pgdir[P1X(HIGH_ADDR_IMM)] =
-        ((LOW_ADDR_IMM >> PAGE_SHIFT) << 10) | PTE_RWX | PTE_GLOBAL | PTE_V;
-
-    // 映射kmalloc区域
-
-    base_pgdir[P1X(KMALLOC_BEGIN_VA)] =
-        kernel_boot_pgdir[P1X(KMALLOC_BEGIN_VA)];
-
-    // 映射MMIO区域
-    // map_segment(base_pgdir, 0, VIRTIO_BEGIN_ADDRESS, MMIO_BEGIN_VA,
-    //            MMIO_END_VA - MMIO_BEGIN_VA, PTE_RW | PTE_GLOBAL);
-
-    // 注意，只有被空闲页链表管理的内存（DRAM），才能使用map_segment函数
-    map_mem(base_pgdir, VIRTIO_BEGIN_ADDRESS, MMIO_BEGIN_VA,
-            MMIO_END_VA - MMIO_BEGIN_VA, PTE_RW | PTE_GLOBAL);
+    // 将内核空间的映射复制到模板中
+    memcpy(base_pgdir + P1X(HIGH_ADDR_IMM),
+           kernel_boot_pgdir + P1X(HIGH_ADDR_IMM),
+           0x1FF - P1X(HIGH_ADDR_IMM) + 1);
 
     // 映射Pages区域
     map_segment(base_pgdir, 0, PADDR(pages), UPAGES,
@@ -347,24 +334,11 @@ static int env_setup_vm(struct Env *e) {
     memcpy(e->env_pgdir + P1X(UTOP), base_pgdir + P1X(UTOP),
            sizeof(Pte) * (P1X(UVPT) - P1X(UTOP)));
 
-    // 复制直接映射区域的页目录映射
+    // 将内核空间的映射复制到每个用户进程中
+    memcpy(e->env_pgdir + P1X(HIGH_ADDR_IMM),
+           kernel_boot_pgdir + P1X(HIGH_ADDR_IMM),
+           0x1FF - P1X(HIGH_ADDR_IMM) + 1);
 
-    e->env_pgdir[P1X(HIGH_ADDR_IMM)] = base_pgdir[P1X(HIGH_ADDR_IMM)];
-
-    // 复制MMIO区域的映射
-    e->env_pgdir[P1X(MMIO_BEGIN_VA)] = base_pgdir[P1X(MMIO_BEGIN_VA)];
-
-    // 复制kmalloc区域的映射
-    e->env_pgdir[P1X(KMALLOC_BEGIN_VA)] = base_pgdir[P1X(KMALLOC_BEGIN_VA)];
-
-    /* Step 3: Map its own page table at 'UVPT' with readonly permission.
-     * As a result, user programs can read its page table through 'UVPT' */
-    // 页目录中的一项映射4MB的内存空间，设置`env_pgdir`中的一项，相当于映射了4MB的内存空间
-    // 此处，这4MB的内存空间刚好对应了进程自身的页表
-    // 注意页表（env_pgdir）是4KB对齐的，故`PADDR(e->env_pgdir)`的低12位刚好为0
-    // 这12位刚好对应硬件标志位、软件标志位
-    // e->env_pgdir[P1X(UVPT)] = (PPN(PADDR(e->env_pgdir)) << 10) | PTE_V |
-    //                          PTE_NON_LEAF | PTE_USER | PTE_GLOBAL;
     return 0;
 }
 
