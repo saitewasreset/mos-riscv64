@@ -1,8 +1,11 @@
+#include <device.h>
 #include <device_tree.h>
 #include <endian.h>
+#include <kmalloc.h>
 #include <mmu.h>
 #include <pmap.h>
 #include <printk.h>
+#include <string.h>
 #include <virtio.h>
 
 void virtio_init(void) {
@@ -28,10 +31,9 @@ void virtio_init(void) {
                "virtio %02lu: %s interrupt = %x pa = 0x%016lx len = 0x%016lx\n",
                i, current_node->name, device_data.interrupt_id,
                device_data.begin_pa, device_data.len);
-    }
 
-    kmap(MMIO_BEGIN_VA, VIRTIO_BEGIN_ADDRESS, MMIO_END_VA - MMIO_BEGIN_VA,
-         PTE_V | PTE_RW | PTE_GLOBAL);
+        register_virtio_device(&device_data);
+    }
 
     debugk("virtio_init", "virtio init success\n");
 }
@@ -107,4 +109,15 @@ int parse_virtio_device(struct device_node *node,
     device_data->interrupt_parent_id = interrupt_parent_id;
 
     return 0;
+}
+
+void register_virtio_device(struct virtio_device_data *device_data) {
+    struct virtio_device_data *cloned =
+        (struct virtio_device_data *)kmalloc(sizeof(struct virtio_device_data));
+
+    memcpy(cloned, device_data, sizeof(struct virtio_device_data));
+
+    struct Device *slot = add_device("virtio_mmio", cloned);
+
+    add_mmio_range(slot, device_data->begin_pa, device_data->len);
 }

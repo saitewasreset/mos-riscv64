@@ -1,4 +1,5 @@
 #include <asm/asm.h>
+#include <device.h>
 #include <device_tree.h>
 #include <env.h>
 #include <kmalloc.h>
@@ -49,6 +50,8 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
     device_tree_init(dtb_address);
 
     virtio_init();
+
+    dump_device();
 
     printk("My life for Super Earth!\n");
     // lab2:

@@ -53,6 +53,7 @@ struct virtio_device_data {
 };
 
 void virtio_init(void);
+void register_virtio_device(struct virtio_device_data *device_data);
 int parse_virtio_device(struct device_node *node,
                         struct virtio_device_data *device_data);
 

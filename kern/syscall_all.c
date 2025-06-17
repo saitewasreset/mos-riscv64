@@ -1,7 +1,6 @@
-#include "error.h"
-#include "trap.h"
-#include "types.h"
+#include <device.h>
 #include <env.h>
+#include <error.h>
 #include <fork.h>
 #include <io.h>
 #include <mmu.h>
@@ -12,6 +11,8 @@
 #include <sbi.h>
 #include <sched.h>
 #include <syscall.h>
+#include <trap.h>
+#include <types.h>
 #include <userspace.h>
 #include <virt.h>
 
@@ -892,24 +893,24 @@ int sys_cgetc(void) {
  */
 // Checked by DeepSeek-R1 20250508 16:35
 static int is_illegal_device_pa_range(u_reg_t pa, u_reg_t len) {
-    static u_reg_t valid_base_address[VIRTIO_COUNT] = {
-        0x0000000010001000, 0x0000000010002000, 0x0000000010003000,
-        0x0000000010004000, 0x0000000010005000, 0x0000000010006000,
-        0x0000000010007000, 0x0000000010008000};
-    static u_reg_t valid_len[VIRTIO_COUNT] = {
-        VIRTIO_ADDRESS_SPACE_SIZE, VIRTIO_ADDRESS_SPACE_SIZE,
-        VIRTIO_ADDRESS_SPACE_SIZE, VIRTIO_ADDRESS_SPACE_SIZE,
-        VIRTIO_ADDRESS_SPACE_SIZE, VIRTIO_ADDRESS_SPACE_SIZE,
-        VIRTIO_ADDRESS_SPACE_SIZE, VIRTIO_ADDRESS_SPACE_SIZE};
 
     if (pa + len < pa) {
         return 1;
     }
 
-    for (int i = 0; i < VIRTIO_COUNT; i++) {
-        if ((pa >= valid_base_address[i]) &&
-            (pa + len <= (valid_base_address[i] + valid_len[i]))) {
-            return 0;
+    for (size_t i = 0; i < devices.len; i++) {
+        struct Device *current_device = &devices.array[i];
+
+        struct DeviceMMIORange *current_mmio_range =
+            current_device->mmio_range_list;
+
+        while (current_mmio_range != NULL) {
+            if ((pa >= current_mmio_range->pa) &&
+                (pa < current_mmio_range->pa + current_mmio_range->len)) {
+                return 0;
+            }
+
+            current_mmio_range = current_mmio_range->next;
         }
     }
 
