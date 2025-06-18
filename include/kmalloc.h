@@ -30,4 +30,6 @@ void kmalloc_init(void);
 void *kmalloc(size_t size);
 void kfree(void *p);
 
+void allocation_summarize();
+
 #endif

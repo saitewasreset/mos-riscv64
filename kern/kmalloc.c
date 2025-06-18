@@ -4,6 +4,9 @@
 
 struct MBlock_list mblock_list;
 
+size_t total_requested_bytes = 0;
+size_t total_free_bytes = 0;
+
 void kmalloc_init() {
     int ret = 0;
 
@@ -38,6 +41,8 @@ void kmalloc_init() {
 }
 
 void *kmalloc(size_t size) {
+    total_requested_bytes += size;
+
     size = ROUND(size, 8);
 
     struct MBlock *cur_block = NULL;
@@ -93,8 +98,13 @@ void kfree(void *p) {
     struct MBlock *cur_node = (struct MBlock *)node_addr;
 
     if (((size_t)cur_node->ptr) != ((size_t)(cur_node->data))) {
+        panic("kmalloc: free: invalid node structure: node = 0x%016lx "
+              "node->ptr = 0x%016lx node->data = 0x%016lx\n",
+              cur_node, (size_t)cur_node->ptr, (size_t)(cur_node->data));
         return;
     }
+
+    total_free_bytes += cur_node->size;
 
     struct MBlock *next_node = LIST_NEXT(cur_node, mb_link);
     struct MBlock *prev_node = NULL;
@@ -118,4 +128,30 @@ void kfree(void *p) {
     }
 
     cur_node->free = 1;
+}
+
+void allocation_summarize() {
+    size_t allocated = 0;
+    size_t left = 0;
+    size_t block_count = 0;
+
+    struct MBlock *cur_block = NULL;
+
+    LIST_FOREACH(cur_block, &mblock_list, mb_link) {
+        block_count++;
+
+        allocated += sizeof(struct MBlock);
+
+        if (cur_block->free == 0) {
+            allocated += cur_block->size;
+        } else {
+            left += cur_block->size;
+        }
+    }
+
+    debugk("allocation_summarize",
+           "block = %lu total = %lu allocated = %lu left = %lu total requested "
+           "= %lu total freed = %lu\n",
+           block_count, allocated + left, allocated, left,
+           total_requested_bytes, total_free_bytes);
 }
