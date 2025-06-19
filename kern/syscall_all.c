@@ -2,7 +2,6 @@
 #include <env.h>
 #include <error.h>
 #include <fork.h>
-#include <io.h>
 #include <mmu.h>
 #include <pmap.h>
 #include <print.h>
@@ -892,7 +891,8 @@ int sys_cgetc(void) {
  *   - 地址溢出检查防止整数回绕（如0xFFFFFFFF + 4）
  */
 // Checked by DeepSeek-R1 20250508 16:35
-static int is_illegal_device_pa_range(u_reg_t pa, u_reg_t len) {
+static int is_illegal_device_pa_range(u_reg_t pa, u_reg_t len,
+                                      struct Device **out_device) {
 
     if (pa + len < pa) {
         return 1;
@@ -907,6 +907,9 @@ static int is_illegal_device_pa_range(u_reg_t pa, u_reg_t len) {
         while (current_mmio_range != NULL) {
             if ((pa >= current_mmio_range->pa) &&
                 (pa < current_mmio_range->pa + current_mmio_range->len)) {
+
+                *out_device = current_device;
+
                 return 0;
             }
 
@@ -979,6 +982,8 @@ static int is_illegal_align(u_reg_t va, u_reg_t len) {
 int sys_write_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
     /* Exercise 5.1: Your code here. (1/2) */
 
+    struct Device *target_device = NULL;
+
     if ((len != 1) && (len != 2) && (len != 4) && (len != 8)) {
         return -E_INVAL;
     }
@@ -991,7 +996,7 @@ int sys_write_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
         return -E_INVAL;
     }
 
-    if (is_illegal_device_pa_range(pa, len) != 0) {
+    if (is_illegal_device_pa_range(pa, len, &target_device) != 0) {
         return -E_INVAL;
     }
 
@@ -999,22 +1004,22 @@ int sys_write_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
         uint8_t data = 0;
         copy_user_space((void *)va, &data, 1);
 
-        iowrite8(data, pa);
+        iowrite8(target_device, data, pa);
     } else if (len == 2) {
         uint16_t data = 0;
         copy_user_space((void *)va, &data, 2);
 
-        iowrite16(data, pa);
+        iowrite16(target_device, data, pa);
     } else if (len == 4) {
         uint32_t data = 0;
         copy_user_space((void *)va, &data, 4);
 
-        iowrite32(data, pa);
+        iowrite32(target_device, data, pa);
     } else if (len == 4) {
         uint64_t data = 0;
         copy_user_space((void *)va, &data, 8);
 
-        iowrite64(data, pa);
+        iowrite64(target_device, data, pa);
     } else {
         panic("unreachable code: len shoudle be 1 or 2 or 4 or 8");
     }
@@ -1044,6 +1049,8 @@ int sys_write_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
 int sys_read_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
     /* Exercise 5.1: Your code here. (2/2) */
 
+    struct Device *target_device = NULL;
+
     if ((len != 1) && (len != 2) && (len != 4) && (len != 8)) {
         return -E_INVAL;
     }
@@ -1056,24 +1063,24 @@ int sys_read_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
         return -E_INVAL;
     }
 
-    if (is_illegal_device_pa_range(pa, len) != 0) {
+    if (is_illegal_device_pa_range(pa, len, &target_device) != 0) {
         return -E_INVAL;
     }
 
     if (len == 1) {
-        uint8_t data = ioread8(pa);
+        uint8_t data = ioread8(target_device, pa);
 
         copy_user_space(&data, (void *)va, 1);
     } else if (len == 2) {
-        uint16_t data = ioread16(pa);
+        uint16_t data = ioread16(target_device, pa);
 
         copy_user_space(&data, (void *)va, 2);
     } else if (len == 4) {
-        uint32_t data = ioread32(pa);
+        uint32_t data = ioread32(target_device, pa);
 
         copy_user_space(&data, (void *)va, 4);
     } else if (len == 8) {
-        uint64_t data = ioread64(pa);
+        uint64_t data = ioread64(target_device, pa);
 
         copy_user_space(&data, (void *)va, 8);
     } else {
