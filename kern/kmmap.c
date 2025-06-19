@@ -35,7 +35,8 @@ void *kmmap_alloc(u_reg_t pa, size_t size, uint32_t perm) {
     }
 
     if (found == 0) {
-        debugk("kmmap_alloc", "no free kmap address space for size: %lx", size);
+        debugk("kmmap_alloc", "no free kmap address space for size: %lx\n",
+               size);
         return NULL;
     }
 
@@ -43,11 +44,11 @@ void *kmmap_alloc(u_reg_t pa, size_t size, uint32_t perm) {
         kmmap_bmap[i] = (vpn_offset + page_count - i);
     }
 
-    u_reg_t begin_vpn = vpn_offset + VPN(KMMAP_BEGIN_VA);
+    u_reg_t begin_va = (vpn_offset << PAGE_SHIFT) + KMMAP_BEGIN_VA;
 
-    kmap(begin_vpn << PAGE_SHIFT, pa, size, perm);
+    kmap(begin_va, pa, size, perm);
 
-    return (void *)(begin_vpn << PAGE_SHIFT);
+    return (void *)(begin_va);
 }
 
 // 若地址合法但未映射，本函数输出警告
@@ -62,7 +63,7 @@ void kmmap_free(void *mapped_va) {
         panic("kmmap_free: va not aligned to PAGE_SIZE: 0x%016lx", va);
     }
 
-    u_reg_t vpn = va >> PAGE_SHIFT;
+    u_reg_t vpn = VPN(va);
     u_reg_t vpn_offset = vpn - VPN(KMMAP_BEGIN_VA);
 
     size_t page_count = kmmap_bmap[vpn_offset];
