@@ -444,6 +444,31 @@ void map_mem(Pte *pgdir, u_reg_t va, u_reg_t pa, size_t len, uint32_t perm) {
     tlb_flush_all();
 }
 
+// 在`pgdir`对应的页表中，从`va`开始，取消映射长度为`len`的内存
+// 该函数仅应当用于不受空闲链表管理的内存（例如，MMIO）
+// 若对应虚拟地址未映射，本函数静默成功
+void unmap_mem(Pte *pgdir, u_reg_t va, size_t len) {
+    len = ROUND(len, PAGE_SIZE);
+
+    if (va % PAGE_SIZE != 0) {
+        panic("unmap_mem: va 0x%016lx not aligned to PAGE_SIZE", va);
+    }
+
+    for (u_reg_t offset = 0; offset < len; offset += PAGE_SIZE) {
+        u_reg_t current_va = va + offset;
+
+        Pte *pte = NULL;
+
+        pgdir_walk(pgdir, current_va, 0, &pte);
+
+        if (pte != NULL) {
+            *pte = 0;
+        }
+    }
+
+    tlb_flush_all();
+}
+
 // 在内核启动时所用的页表，以及所有进程的页表中
 // 从`va`开始，映射长度为`len`，标志位为`perm`的内存，指向物理地址`pa`
 // 该函数仅应当用于不受空闲链表管理的内存（例如，MMIO）
@@ -458,6 +483,23 @@ void kmap(u_reg_t va, u_reg_t pa, size_t len, uint32_t perm) {
 
         if (current_env->env_status != ENV_FREE) {
             map_mem(current_env->env_pgdir, va, pa, len, perm);
+        }
+    }
+}
+
+// 在内核启动时所用的页表，以及所有进程的页表中
+// 从`va`开始，取消映射长度为`len`的内存
+// 该函数仅应当用于不受空闲链表管理的内存（例如，MMIO）
+//
+// Precondition：Env应当已经初始化
+void kunmap(u_reg_t va, size_t len) {
+    unmap_mem(kernel_boot_pgdir, va, len);
+
+    for (size_t i = 0; i < NENV; i++) {
+        struct Env *current_env = &envs[i];
+
+        if (current_env->env_status != ENV_FREE) {
+            unmap_mem(current_env->env_pgdir, va, len);
         }
     }
 }
