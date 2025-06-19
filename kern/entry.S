@@ -85,3 +85,4 @@ BUILD_HANDLER reserved do_reserved
 BUILD_HANDLER clock do_clock
 BUILD_HANDLER page_fault do_page_fault
 BUILD_HANDLER sys do_syscall
+BUILD_HANDLER interrupt do_interrupt

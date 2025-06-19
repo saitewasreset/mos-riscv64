@@ -14,6 +14,7 @@ extern void handle_tlb(void);
 extern void handle_sys(void);
 extern void handle_reserved(void);
 extern void handle_page_fault(void);
+extern void handle_interrupt(void);
 
 extern void set_exception_handler(void *exception_handler);
 extern void exc_gen_entry(void);
@@ -97,9 +98,14 @@ void (*exception_handlers[64])(void) = {
 };
 
 void (*interrupt_handlers[64])(void) = {
-    [0 ... 63] = handle_reserved,
+    [0 ... 63] = handle_interrupt,
     [5] = handle_clock,
 };
+
+// 该map用于动态注册中断处理函数
+// 无法直接使用interrupt_handlers，因为这样难以传递陷阱帧
+// 在handle_interrupt函数中，将根据该map动态分配中断
+extern void (*interrupt_handler_map[64])(struct Trapframe *);
 
 void do_kernel_exception(struct Trapframe *tf) {
     u_reg_t cause = (u_reg_t)tf->scause;
@@ -134,6 +140,20 @@ void do_reserved(struct Trapframe *tf) {
 }
 
 void do_clock(struct Trapframe *tf) { schedule(0); }
+
+void do_interrupt(struct Trapframe *tf) {
+    reg_t interrupt_code = -((reg_t)tf->scause);
+
+    if (interrupt_code >= 64) {
+        do_reserved(tf);
+    }
+
+    if (interrupt_handler_map[interrupt_code] == NULL) {
+        do_reserved(tf);
+    }
+
+    interrupt_handler_map[interrupt_code](tf);
+}
 
 void do_page_fault(struct Trapframe *tf) {
     // 对于内核代码发生的缺页异常，使用do_kernel_exception处理

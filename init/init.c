@@ -4,6 +4,7 @@
 #include <env.h>
 #include <kmalloc.h>
 #include <machine.h>
+#include <plic.h>
 #include <pmap.h>
 #include <printk.h>
 #include <sbi.h>
@@ -48,6 +49,8 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
     // Device
 
     device_tree_init(dtb_address);
+
+    plic_init();
 
     virtio_init();
 

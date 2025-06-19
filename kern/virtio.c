@@ -117,7 +117,7 @@ void register_virtio_device(struct virtio_device_data *device_data) {
 
     memcpy(cloned, device_data, sizeof(struct virtio_device_data));
 
-    struct Device *slot = add_device("virtio_mmio", cloned);
+    struct Device *temp_slot = add_device("virtio_mmio", cloned);
 
-    add_mmio_range(slot, device_data->begin_pa, device_data->len);
+    add_mmio_range(temp_slot, device_data->begin_pa, device_data->len);
 }

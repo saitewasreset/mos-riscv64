@@ -31,9 +31,13 @@ struct DeviceArray {
     size_t capacity;
 };
 
+// 对设备列表进行任何修改操作后，返回的指针就可能失效！！
 struct Device *add_device(char *device_type, void *device_data);
 
 void add_mmio_range(struct Device *target_device, u_reg_t pa, size_t len);
+
+size_t find_device_by_type(char *device_type, struct Device *out_devices,
+                           size_t max_count);
 
 void dump_device();
 

@@ -5,6 +5,8 @@
 #include <printk.h>
 #include <string.h>
 
+// 不能返回指向`devices`的指针！因为`devices`是动态数组
+// 可能随时被重分配到其它位置！
 struct DeviceArray devices = {NULL, 0, 0};
 
 static uint64_t global_device_id = 0;
@@ -15,6 +17,7 @@ static void print_mmio_range(struct DeviceMMIORange *mmio_range_list);
 
 static void *get_mapped_pa(struct Device *device, u_reg_t pa);
 
+// 对设备列表进行任何修改操作后，返回的指针就可能失效！！
 struct Device *add_device(char *device_type, void *device_data) {
     if (devices.len >= devices.capacity) {
         if (devices.capacity == 0) {
@@ -82,6 +85,31 @@ static void print_mmio_range(struct DeviceMMIORange *mmio_range_list) {
     }
 }
 
+size_t find_device_by_type(char *device_type, struct Device *out_devices,
+                           size_t max_count) {
+    size_t count = 0;
+
+    if (max_count == 0) {
+        return 0;
+    }
+
+    for (size_t i = 0; i < devices.len; i++) {
+        struct Device *current_device = &devices.array[i];
+
+        if (strcmp(current_device->device_type, device_type) == 0) {
+            out_devices[count] = *current_device;
+
+            count++;
+
+            if (count >= max_count) {
+                break;
+            }
+        }
+    }
+
+    return count;
+}
+
 void dump_device() {
     for (size_t i = 0; i < devices.len; i++) {
         struct Device *current_device = &devices.array[i];
@@ -108,6 +136,8 @@ static void *get_mapped_pa(struct Device *device, u_reg_t pa) {
             u_reg_t offset = pa - current_range->pa;
 
             result = (void *)(current_range->mapped_va + offset);
+
+            break;
         }
 
         current_range = current_range->next;
@@ -118,7 +148,7 @@ static void *get_mapped_pa(struct Device *device, u_reg_t pa) {
               device->device_id);
     }
 
-    return NULL;
+    return result;
 }
 
 // 若pa非法（不在`device`允许的范围内，将panic）
@@ -133,7 +163,8 @@ uint16_t ioread16(struct Device *device, u_reg_t paddr) {
 
 // 若pa非法（不在`device`允许的范围内，将panic）
 uint32_t ioread32(struct Device *device, u_reg_t paddr) {
-    return *(volatile uint32_t *)get_mapped_pa(device, paddr);
+    void *va = get_mapped_pa(device, paddr);
+    return *(volatile uint32_t *)va;
 }
 
 // 若pa非法（不在`device`允许的范围内，将panic）
