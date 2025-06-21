@@ -54,6 +54,8 @@ void plic_init(void) {
                                handle_plic_interrupt);
     enable_interrupt(plic_data.s_interrupt_code);
 
+    plic_set_prority_threshold(0);
+
     debugk("plic_init", "plic init success\n");
 }
 
@@ -267,4 +269,12 @@ void handle_plic_interrupt(struct Trapframe *tf) {
     }
 
     plic_mark_finish(interrupt_code);
+}
+
+uint32_t plic_get_interrupt_count(void) {
+    if (plic_device == NULL) {
+        panic("plic_get_interrupt_count called while plic_device == NULL");
+    }
+
+    return plic_interrupt_count;
 }

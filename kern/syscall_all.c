@@ -1,8 +1,10 @@
 #include <device.h>
 #include <env.h>
+#include <env_interrupt.h>
 #include <error.h>
 #include <fork.h>
 #include <mmu.h>
+#include <plic.h>
 #include <pmap.h>
 #include <print.h>
 #include <printk.h>
@@ -122,6 +124,10 @@ uint32_t sys_getenvid(void) {
 void __attribute__((noreturn)) sys_yield(void) {
     // Hint: Just use 'schedule' with 'yield' set.
     /* Exercise 4.7: Your code here. */
+
+    // `curenv != NULL`在`do_syscall`中检查
+    curenv->env_in_syscall = 0;
+
     schedule(1);
 }
 
@@ -518,6 +524,7 @@ int sys_exofork(void) {
     /* Exercise 4.9: Your code here. (3/4) */
     // 2 -> v0
     e->env_tf.regs[10] = 0;
+    e->env_in_syscall = 0;
 
     dup_userspace(curenv->env_pgdir, e->env_pgdir, e->env_asid);
 
@@ -839,6 +846,7 @@ int sys_ipc_try_send(uint32_t envid, uint64_t value, u_reg_t srcva,
     /* Exercise 4.8: Your code here. (7/8) */
 
     e->env_status = ENV_RUNNABLE;
+    e->env_in_syscall = 0;
 
     TAILQ_INSERT_TAIL(&env_sched_list, e, env_sched_link);
 
@@ -1106,13 +1114,59 @@ void sys_unmap_user_vpt(void) {
     unmap_user_vpt(curenv);
 }
 
+void sys_sleep(void) {
+    if (curenv == NULL) {
+        panic("sys_sleep called while curenv is NULL");
+    }
+
+    curenv->env_status = ENV_NOT_RUNNABLE;
+    TAILQ_REMOVE(&env_sched_list, curenv, env_sched_link);
+
+    // 设置本次系统调用的返回值为0
+    // 10 -> a0
+    curenv->env_tf.regs[10] = 0;
+
+    schedule(1);
+}
+
+int sys_set_interrupt_handler(uint32_t interrupt_code, u_reg_t handler_va) {
+    if (curenv == NULL) {
+        panic("sys_set_interrupt_handler called while curenv is NULL");
+    }
+
+    uint32_t interrupt_count = plic_get_interrupt_count();
+
+    if (interrupt_code >= interrupt_count) {
+        return -E_INVAL;
+    }
+
+    if ((handler_va < UTEMP) || (handler_va >= USTACKTOP)) {
+        return -E_INVAL;
+    }
+
+    register_env_interrupt(interrupt_code, curenv, handler_va);
+
+    plic_enable_interrupt(interrupt_code, 1, handle_env_interrupt);
+
+    return 0;
+}
+
+void sys_interrupt_return(void) {
+    if (curenv == NULL) {
+        panic("sys_interrupt_return called while curenv is NULL");
+    }
+
+    ret_env_interrupt();
+
+    schedule(1);
+}
+
 void *syscall_table[MAX_SYSNO] = {
     [SYS_putchar] = sys_putchar,
     [SYS_print_cons] = sys_print_cons,
     [SYS_getenvid] = sys_getenvid,
     [SYS_yield] = sys_yield,
     [SYS_env_destroy] = sys_env_destroy,
-    [SYS_set_tlb_mod_entry] = sys_set_tlb_mod_entry,
     [SYS_mem_alloc] = sys_mem_alloc,
     [SYS_mem_map] = sys_mem_map,
     [SYS_mem_unmap] = sys_mem_unmap,
@@ -1127,6 +1181,9 @@ void *syscall_table[MAX_SYSNO] = {
     [SYS_read_dev] = sys_read_dev,
     [SYS_map_user_vpt] = sys_map_user_vpt,
     [SYS_unmap_user_vpt] = sys_unmap_user_vpt,
+    [SYS_sleep] = sys_sleep,
+    [SYS_set_interrupt_handler] = sys_set_interrupt_handler,
+    [SYS_interrupt_return] = sys_interrupt_return,
 };
 
 /*
@@ -1163,6 +1220,12 @@ void do_syscall(struct Trapframe *tf) {
         return;
     }
 
+    if (curenv == NULL) {
+        panic("do_syscall called while curenv is NULL");
+    }
+
+    curenv->env_in_syscall = 1;
+
     /* Step 1: Add the EPC in 'tf' by a word (size of an instruction). */
     /* Exercise 4.2: Your code here. (1/4) */
     // 注意，执行syscall时，EPC中保存的是syscall指令的地址，为了正常返回，需要手动+4
@@ -1184,7 +1247,16 @@ void do_syscall(struct Trapframe *tf) {
      */
     /* Exercise 4.2: Your code here. (4/4) */
 
+    // env_in_syscall设置：
+    // 对于阻塞调用`sys_ipc_recv`，该函数不会返回 ->
+    // 保持`env_in_syscall = 1`，符合预期
+    // 当`sys_ipc_try_send`唤醒目标进程时，设置`env_in_syscall = 0`
+    // 对于`sys_yield`该函数不会返回 -> 函数中手动置0
+    // 对于`sys_exofork`父进程从此处返回，子进程不从此处返回
+    // 函数中手动置0
     int ret = func(arg1, arg2, arg3, arg4, arg5);
+
+    curenv->env_in_syscall = 0;
 
     // 10 -> a0
     tf->regs[10] = (u_reg_t)ret;

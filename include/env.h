@@ -49,6 +49,12 @@ struct Env {
     TAILQ_ENTRY(Env) env_sched_link; // 用于调度队列(`env_sched_list`)的指针域
     uint32_t env_pri;                // 调度优先级
 
+    // 进程是否正在执行系统调用
+    uint32_t env_in_syscall;
+
+    // 用于处理中断的函数的虚拟地址
+    u_reg_t handler_function_va;
+
     // Lab 4 IPC
     uint64_t env_ipc_value; // IPC发送方发送的值
     uint32_t env_ipc_from;  // IPC发送方的envid
@@ -116,7 +122,7 @@ void env_init(void);
  * Postcondition：
  * - 成功时返回0，新Env的以下字段被初始化：
  *   'env_id', 'env_asid', 'env_parent_id', 'env_tf.regs[29]',
- * 'env_tf.cp0_status', 'env_user_tlb_mod_entry', 'env_runs'
+ * 'env_tf.cp0_status', 'env_user_tlb_mod_entry', 'env_runs', 'env_in_syscall'
  * - 失败时返回错误码：
  *   -E_NO_FREE_ENV：无空闲Env可用
  *   -E_NO_MEM：内存分配失败（env_setup_vm）

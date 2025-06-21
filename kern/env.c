@@ -417,6 +417,9 @@ int env_alloc(struct Env **new, u_int parent_id) {
 
     e->env_parent_id = parent_id;
 
+    e->env_in_syscall = 0;
+    e->handler_function_va = 0;
+
     /* Step 4: Initialize the sp and 'cp0_status' in 'e->env_tf'.
      *   Set the EXL bit to ensure that the processor remains in kernel mode
      * during context recovery. Additionally, set UM to 1 so that when ERET

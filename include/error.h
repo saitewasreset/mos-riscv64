@@ -44,6 +44,9 @@
 // File not a valid executable
 #define E_NOT_EXEC 13
 
+// 进程在系统调用的阻塞状态被唤醒
+#define E_INTR 14
+
 /*
  * A quick wrapper around function calls to propagate errors.
  * Use this with caution, as it leaks resources we've acquired so far.

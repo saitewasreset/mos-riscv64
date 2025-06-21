@@ -31,10 +31,13 @@ struct PlicData {
 
 typedef void (*plic_interrupt_handler_func)(struct Trapframe *tf);
 
+// 本函数将同时允许所有PLIC中断（设置threshold = 0）
 void plic_init(void);
 void register_plic_device(struct PlicData *device_data);
 int parse_plic_device(struct device_node *node, struct PlicData *device_data);
 void handle_plic_interrupt(struct Trapframe *tf);
+
+uint32_t plic_get_interrupt_count(void);
 
 uint32_t plic_get_prority_threshold(void);
 void plic_set_prority_threshold(uint32_t threshold);
