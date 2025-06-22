@@ -559,6 +559,19 @@ int syscall_read_dev(void *va, u_int dev, u_int len);
 void syscall_map_user_vpt(void);
 void syscall_unmap_user_vpt(void);
 
+void syscall_sleep(void);
+int syscall_set_interrupt_handler(uint32_t interrupt_code, u_reg_t handler_va);
+
+int syscall_get_device_count(char *device_type);
+
+int syscall_get_device(char *device_type, size_t idx, size_t max_data_len,
+                       u_reg_t out_device, u_reg_t out_device_data);
+
+__attribute__((always_inline)) inline static void
+syscall_interrupt_return(void) {
+    msyscall(SYS_interrupt_return, 0, 0, 0, 0, 0);
+}
+
 // ipc.c
 void ipc_send(uint32_t whom, uint64_t val, const void *srcva, uint32_t perm);
 uint64_t ipc_recv(uint32_t *whom, void *dstva, uint32_t *perm);

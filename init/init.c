@@ -1,3 +1,4 @@
+#include "serial.h"
 #include <asm/asm.h>
 #include <device.h>
 #include <device_tree.h>
@@ -54,9 +55,13 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
 
     virtio_init();
 
+    serial_init();
+
     dump_device();
 
     allocation_summarize();
+
+    ENV_CREATE(user_hello);
 
     printk("My life for Super Earth!\n");
     // lab2:
@@ -85,7 +90,7 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
     // ENV_CREATE(user_devtst);
 
     // lab3:
-    // schedule(0);
+    schedule(0);
     halt();
 }
 

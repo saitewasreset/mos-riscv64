@@ -1,9 +1,11 @@
-#include "mmu.h"
 #include <device.h>
+#include <error.h>
 #include <kmalloc.h>
 #include <kmmap.h>
+#include <mmu.h>
 #include <printk.h>
 #include <string.h>
+#include <userspace.h>
 
 // 不能返回指向`devices`的指针！因为`devices`是动态数组
 // 可能随时被重分配到其它位置！
@@ -18,7 +20,8 @@ static void print_mmio_range(struct DeviceMMIORange *mmio_range_list);
 static void *get_mapped_pa(struct Device *device, u_reg_t pa);
 
 // 对设备列表进行任何修改操作后，返回的指针就可能失效！！
-struct Device *add_device(char *device_type, void *device_data) {
+struct Device *add_device(char *device_type, void *device_data,
+                          size_t device_data_len) {
     if (devices.len >= devices.capacity) {
         if (devices.capacity == 0) {
             devices.capacity = DEVICE_ARRAY_RESIZE_FACTOR;
@@ -48,6 +51,7 @@ struct Device *add_device(char *device_type, void *device_data) {
     target_slot->device_id = get_next_device_id();
     target_slot->mmio_range_list = NULL;
     target_slot->device_data = device_data;
+    target_slot->device_data_len = device_data_len;
 
     devices.len++;
 
@@ -149,6 +153,79 @@ static void *get_mapped_pa(struct Device *device, u_reg_t pa) {
     }
 
     return result;
+}
+
+size_t get_device_count(char *device_type) {
+    size_t count = 0;
+
+    for (size_t i = 0; i < devices.len; i++) {
+        struct Device *current_device = &devices.array[i];
+
+        if (strcmp(current_device->device_type, device_type) == 0) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+// 本函数不检查`out_device`、`out_device_data`指向内存的合法性！
+int user_find_device_by_type(char *device_type, size_t idx, size_t max_data_len,
+                             struct UserDevice *out_device,
+                             void *out_device_data) {
+    size_t count = 0;
+
+    struct Device *requested_device = NULL;
+
+    for (size_t i = 0; i < devices.len; i++) {
+        struct Device *current_device = &devices.array[i];
+
+        if (strcmp(current_device->device_type, device_type) == 0) {
+            if (count == idx) {
+                requested_device = current_device;
+                break;
+            }
+
+            count++;
+        }
+    }
+
+    if (requested_device == NULL) {
+        return -E_NO_DEV;
+    }
+
+    struct UserDevice u_device;
+
+    strcpy(u_device.device_type, requested_device->device_type);
+
+    u_device.device_id = requested_device->device_id;
+
+    size_t mmio_range_list_len = 0;
+
+    struct DeviceMMIORange *current_mmio_range =
+        requested_device->mmio_range_list;
+
+    while (current_mmio_range != NULL) {
+        u_device.mmio_range_list[mmio_range_list_len].pa =
+            current_mmio_range->pa;
+        u_device.mmio_range_list[mmio_range_list_len].len =
+            current_mmio_range->len;
+
+        mmio_range_list_len++;
+        current_mmio_range = current_mmio_range->next;
+    }
+
+    u_device.mmio_range_list_len = mmio_range_list_len;
+
+    u_device.device_data_len = requested_device->device_data_len < max_data_len
+                                   ? (requested_device->device_data_len)
+                                   : (max_data_len);
+
+    copy_user_space(&u_device, out_device, sizeof(struct UserDevice));
+    copy_user_space(requested_device->device_data, out_device_data,
+                    u_device.device_data_len);
+
+    return 0;
 }
 
 // 若pa非法（不在`device`允许的范围内，将panic）

@@ -1161,6 +1161,42 @@ void sys_interrupt_return(void) {
     schedule(1);
 }
 
+int sys_get_device_count(char *device_type) {
+    if (curenv == NULL) {
+        panic("sys_get_device_count called while curenv is NULL");
+    }
+
+    char device_type_buffer[DEVICE_TYPE_LEN] = {0};
+
+    copy_user_space(device_type, device_type_buffer, DEVICE_TYPE_LEN);
+
+    device_type_buffer[DEVICE_TYPE_LEN - 1] = '\0';
+
+    return (int)get_device_count(device_type_buffer);
+}
+
+int sys_get_device(char *device_type, size_t idx, size_t max_data_len,
+                   u_reg_t out_device, u_reg_t out_device_data) {
+    if (curenv == NULL) {
+        panic("sys_get_device called while curenv is NULL");
+    }
+
+    if ((is_illegal_va_range(out_device, sizeof(struct UserDevice)) == 1) ||
+        (is_illegal_va_range(out_device_data, max_data_len) == 1)) {
+        return -E_INVAL;
+    }
+
+    char device_type_buffer[DEVICE_TYPE_LEN] = {0};
+
+    copy_user_space(device_type, device_type_buffer, DEVICE_TYPE_LEN);
+
+    device_type_buffer[DEVICE_TYPE_LEN - 1] = '\0';
+
+    return user_find_device_by_type(device_type_buffer, idx, max_data_len,
+                                    (struct UserDevice *)out_device,
+                                    (void *)out_device_data);
+}
+
 void *syscall_table[MAX_SYSNO] = {
     [SYS_putchar] = sys_putchar,
     [SYS_print_cons] = sys_print_cons,
@@ -1184,6 +1220,8 @@ void *syscall_table[MAX_SYSNO] = {
     [SYS_sleep] = sys_sleep,
     [SYS_set_interrupt_handler] = sys_set_interrupt_handler,
     [SYS_interrupt_return] = sys_interrupt_return,
+    [SYS_get_device_count] = sys_get_device_count,
+    [SYS_get_device] = sys_get_device,
 };
 
 /*

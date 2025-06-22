@@ -47,6 +47,9 @@
 // 进程在系统调用的阻塞状态被唤醒
 #define E_INTR 14
 
+// 没有请求的设备
+#define E_NO_DEV 15
+
 /*
  * A quick wrapper around function calls to propagate errors.
  * Use this with caution, as it leaks resources we've acquired so far.

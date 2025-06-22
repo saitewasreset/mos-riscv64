@@ -1,4 +1,5 @@
 include include.mk
+include driver/drivers.mk
 
 lab                     ?= $(shell cat .mos-this-lab 2>/dev/null || echo 6)
 
@@ -7,17 +8,22 @@ mos_elf                 := $(target_dir)/mos
 qemu_pts                := $(shell [ -f .qemu_log ] && grep -Eo '/dev/pts/[0-9]+' .qemu_log)
 link_script             := kernel.lds
 
+driver_dir				:= driver
+
 modules                 := lib init kern
 targets                 := $(mos_elf)
 
-user_modules			:= user/bare
+user_modules			:= user/bare user
 
 ifneq ($(prog),)
 dbg_elf                 := -ex "add-symbol-file $(prog)"
 endif
 
-objects                 := $(addsuffix /*.o, $(modules)) $(addsuffix /*.x, $(user_modules))
+driver_modules 			:= $(foreach drv,$(DRIVERS),$(driver_dir)/$(drv)/$(drv).x)
+
+objects                 := $(addsuffix /*.o, $(modules)) $(addsuffix /*.x, $(user_modules)) $(driver_modules)
 modules                 += $(user_modules)
+modules                 += driver
 
 CFLAGS                  += -DLAB=$(shell echo $(lab) | cut -f1 -d_)
 QEMU_FLAGS              += -machine virt -m 2G -nographic \
@@ -64,6 +70,7 @@ fs-image: $(target_dir) user
 	$(MAKE) --directory=fs image fs-files="$(addprefix ../, $(fs-files))"
 
 fs: user
+driver: user
 user: lib
 
 clean:

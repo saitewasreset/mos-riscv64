@@ -449,6 +449,8 @@ enum {
     SYS_set_interrupt_handler,
     // 当进程的中断处理函数执行完后，返回到被中断的位置
     SYS_interrupt_return,
+    SYS_get_device_count,
+    SYS_get_device,
     MAX_SYSNO,
 };
 

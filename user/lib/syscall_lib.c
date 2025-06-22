@@ -18,10 +18,6 @@ int syscall_env_destroy(u_int envid) {
     return msyscall(SYS_env_destroy, envid);
 }
 
-int syscall_set_tlb_mod_entry(u_int envid, void (*func)(struct Trapframe *)) {
-    return msyscall(SYS_set_tlb_mod_entry, envid, func);
-}
-
 int syscall_mem_alloc(u_int envid, void *va, u_int perm) {
     return msyscall(SYS_mem_alloc, envid, va, perm);
 }
@@ -70,3 +66,19 @@ int syscall_read_dev(void *va, u_int dev, u_int size) {
 void syscall_map_user_vpt(void) { msyscall(SYS_map_user_vpt); }
 
 void syscall_unmap_user_vpt(void) { msyscall(SYS_unmap_user_vpt); }
+
+void syscall_sleep(void) { msyscall(SYS_sleep); }
+
+int syscall_set_interrupt_handler(uint32_t interrupt_code, u_reg_t handler_va) {
+    return msyscall(SYS_set_interrupt_handler, interrupt_code, handler_va);
+}
+
+int syscall_get_device_count(char *device_type) {
+    return msyscall(SYS_get_device_count, device_type);
+}
+
+int syscall_get_device(char *device_type, size_t idx, size_t max_data_len,
+                       u_reg_t out_device, u_reg_t out_device_data) {
+    return msyscall(SYS_get_device, device_type, idx, max_data_len, out_device,
+                    out_device_data);
+}

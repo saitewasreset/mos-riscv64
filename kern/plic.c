@@ -65,7 +65,8 @@ void register_plic_device(struct PlicData *device_data) {
 
     memcpy(cloned, device_data, sizeof(struct PlicData));
 
-    struct Device *temp_slot = add_device("plic", cloned);
+    struct Device *temp_slot =
+        add_device("plic", cloned, sizeof(struct PlicData));
 
     plic_device = (struct Device *)kmalloc(sizeof(struct Device));
 
