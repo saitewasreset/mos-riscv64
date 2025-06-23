@@ -53,14 +53,14 @@ int syscall_ipc_recv(void *dstva) { return msyscall(SYS_ipc_recv, dstva); }
 
 int syscall_cgetc() { return msyscall(SYS_cgetc); }
 
-int syscall_write_dev(void *va, u_int dev, u_int size) {
+int syscall_write_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
     /* Exercise 5.2: Your code here. (1/2) */
-    return msyscall(SYS_write_dev, va, dev, size);
+    return msyscall(SYS_write_dev, va, pa, len);
 }
 
-int syscall_read_dev(void *va, u_int dev, u_int size) {
+int syscall_read_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
     /* Exercise 5.2: Your code here. (2/2) */
-    return msyscall(SYS_read_dev, va, dev, size);
+    return msyscall(SYS_read_dev, va, pa, len);
 }
 
 void syscall_map_user_vpt(void) { msyscall(SYS_map_user_vpt); }
@@ -81,4 +81,8 @@ int syscall_get_device(char *device_type, size_t idx, size_t max_data_len,
                        u_reg_t out_device, u_reg_t out_device_data) {
     return msyscall(SYS_get_device, device_type, idx, max_data_len, out_device,
                     out_device_data);
+}
+
+__attribute__((always_inline)) inline void syscall_interrupt_return(void) {
+    msyscall(SYS_interrupt_return, 0, 0, 0, 0, 0);
 }

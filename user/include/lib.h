@@ -524,7 +524,7 @@ int syscall_cgetc(void);
  *	|  IDE disk  | 0x180001f0 | 0x8    |
  *	* ---------------------------------*
  */
-int syscall_write_dev(void *va, u_int dev, u_int len);
+int syscall_write_dev(u_reg_t va, u_reg_t pa, u_reg_t len);
 /*
  * 概述：
  *   系统调用函数，用于从设备物理地址读取数据到用户空间。根据数据长度选择对应的ioread函数（8/16/32位）。
@@ -554,7 +554,7 @@ int syscall_write_dev(void *va, u_int dev, u_int len);
  *	|  IDE disk  | 0x180001f0 | 0x8    |
  *	* ---------------------------------*
  */
-int syscall_read_dev(void *va, u_int dev, u_int len);
+int syscall_read_dev(u_reg_t va, u_reg_t pa, u_reg_t len);
 
 void syscall_map_user_vpt(void);
 void syscall_unmap_user_vpt(void);
@@ -567,10 +567,7 @@ int syscall_get_device_count(char *device_type);
 int syscall_get_device(char *device_type, size_t idx, size_t max_data_len,
                        u_reg_t out_device, u_reg_t out_device_data);
 
-__attribute__((always_inline)) inline static void
-syscall_interrupt_return(void) {
-    msyscall(SYS_interrupt_return, 0, 0, 0, 0, 0);
-}
+void syscall_interrupt_return(void);
 
 // ipc.c
 void ipc_send(uint32_t whom, uint64_t val, const void *srcva, uint32_t perm);

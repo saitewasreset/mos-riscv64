@@ -19,6 +19,8 @@
 
 extern struct Env *curenv;
 
+static struct Trapframe *syscall_current_tf;
+
 /*
  * 概述：
  *   该函数用于在屏幕上打印一个字符。它是通过调用底层字符打印函数printcharc实现的简单封装。
@@ -1156,9 +1158,7 @@ void sys_interrupt_return(void) {
         panic("sys_interrupt_return called while curenv is NULL");
     }
 
-    ret_env_interrupt();
-
-    schedule(1);
+    ret_env_interrupt(syscall_current_tf);
 }
 
 int sys_get_device_count(char *device_type) {
@@ -1249,6 +1249,8 @@ void *syscall_table[MAX_SYSNO] = {
 // Checked by DeepSeek-R1 20250422 20:01
 void do_syscall(struct Trapframe *tf) {
     int (*func)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+
+    syscall_current_tf = tf;
 
     // 10 -> a0
     int sysno = tf->regs[10];

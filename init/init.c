@@ -61,7 +61,7 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
 
     allocation_summarize();
 
-    ENV_CREATE(user_hello);
+    ENV_CREATE(user_serial);
 
     printk("My life for Super Earth!\n");
     // lab2:

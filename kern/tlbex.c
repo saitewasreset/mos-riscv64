@@ -39,27 +39,27 @@ void passive_alloc(u_reg_t va, Pte *pgdir, uint16_t asid) {
     struct Page *p = NULL;
 
     if (va < UTEMP) {
-        panic("address too low");
+        panic("address too low: 0x%016lx", va);
     }
 
     if (va >= USTACKTOP && va < USTACKTOP + PAGE_SIZE) {
-        panic("invalid memory");
+        panic("invalid memory: 0x%016lx", va);
     }
 
     if (va >= UENVS && va < UPAGES) {
-        panic("envs zone");
+        panic("envs zone: 0x%016lx", va);
     }
 
     if (va >= UPAGES && va < UVPT) {
-        panic("pages zone");
+        panic("pages zone: 0x%016lx", va);
     }
 
     if (va >= UVPT && va < ULIM) {
-        panic("User VPT zone");
+        panic("User VPT zone: 0x%016lx", va);
     }
 
     if (va >= ULIM) {
-        panic("kernel address");
+        panic("kernel address: 0x%016lx", va);
     }
 
     panic_on(page_alloc(&p));

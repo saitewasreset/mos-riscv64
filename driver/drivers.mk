@@ -1,1 +1,1 @@
-DRIVERS		:= hello
+DRIVERS		:= hello serial

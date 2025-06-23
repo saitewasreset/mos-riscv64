@@ -142,7 +142,7 @@ void do_reserved(struct Trapframe *tf) {
 void do_clock(struct Trapframe *tf) { schedule(0); }
 
 void do_interrupt(struct Trapframe *tf) {
-    reg_t interrupt_code = -((reg_t)tf->scause);
+    reg_t interrupt_code = tf->scause & ~(1ULL << 63);
 
     if (interrupt_code >= 64) {
         do_reserved(tf);

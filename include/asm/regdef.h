@@ -45,4 +45,6 @@
 
 #define SIE_STIE GENMASK(5, 5)
 
+#define SIE_SEIE GENMASK(9, 9)
+
 #endif /* __ASM_RISCV64_REGDEF_H */

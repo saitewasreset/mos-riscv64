@@ -29,7 +29,8 @@ struct PlicData {
     size_t len;
 };
 
-typedef void (*plic_interrupt_handler_func)(struct Trapframe *tf);
+typedef void (*plic_interrupt_handler_func)(struct Trapframe *tf,
+                                            uint32_t interrupt_code);
 
 // 本函数将同时允许所有PLIC中断（设置threshold = 0）
 void plic_init(void);

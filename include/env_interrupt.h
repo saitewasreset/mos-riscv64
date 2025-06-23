@@ -12,8 +12,8 @@
 void register_env_interrupt(uint32_t interrupt_code, struct Env *env,
                             u_reg_t handler_function_va);
 
-void handle_env_interrupt(struct Trapframe *tf);
+void handle_env_interrupt(struct Trapframe *tf, uint32_t interrupt_code);
 
-int ret_env_interrupt(void);
+int ret_env_interrupt(struct Trapframe *tf);
 
 #endif

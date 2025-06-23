@@ -254,6 +254,7 @@ void handle_plic_interrupt(struct Trapframe *tf) {
         panic("handle_plic_interrupt called while plic_device == NULL");
     }
 
+    // 读取后，CLAIM寄存器将被清零！
     uint32_t interrupt_code = plic_get_interrupt_code();
 
     if (interrupt_code >= plic_interrupt_count) {
@@ -263,7 +264,7 @@ void handle_plic_interrupt(struct Trapframe *tf) {
     }
 
     if (interrupt_handler[interrupt_code] != NULL) {
-        interrupt_handler[interrupt_code](tf);
+        interrupt_handler[interrupt_code](tf, interrupt_code);
     } else {
         debugk("handle_plic_interrupt", "no handler for interrupt code: %u!\n",
                interrupt_code);

@@ -444,7 +444,7 @@ int env_alloc(struct Env **new, u_int parent_id) {
     e->env_tf.sstatus = SSTATUS_SPIE;
 
     // STIE = 1，启用时钟中断
-    e->env_tf.sie = SIE_STIE;
+    e->env_tf.sie = SIE_STIE | SIE_SEIE;
 
     // 初始化sp寄存器（regs[2]），在栈顶为'argc'、'argv'参数预留空间
     e->env_tf.regs[2] = USTACKTOP - sizeof(int) - sizeof(char **);
