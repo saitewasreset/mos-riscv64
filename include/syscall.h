@@ -3,6 +3,7 @@
 
 #ifndef __ASSEMBLER__
 
+// ！！：若SYS_interrupt_return的编号改变，请同步修改user_interrupt_wrap.S！！
 enum {
     /*
      * 概述：
@@ -448,6 +449,7 @@ enum {
     // 当外部中断发生时，将进程切换到指定的处理函数执行
     SYS_set_interrupt_handler,
     // 当进程的中断处理函数执行完后，返回到被中断的位置
+    // ！！：若SYS_interrupt_return的编号改变，请同步修改user_interrupt_wrap.S！！
     SYS_interrupt_return,
     SYS_get_device_count,
     SYS_get_device,

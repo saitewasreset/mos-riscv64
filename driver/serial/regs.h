@@ -21,6 +21,12 @@
  */
 #define IER_DLM_OFFSET 0x01
 
+#define IER_ERBFI 0x1
+#define IER_ETBEI 0x2
+#define IER_ELSI 0x4
+#define IER_EDSSI 0x8
+#define IER_ALL 0xF
+
 // Interrupt Identification Register/FIFO Control Register
 /*
  * 中断标识寄存器（IIR）
@@ -87,6 +93,19 @@
  */
 #define IIR_FCR_OFFSET 0x02
 
+#define IIR_INTP_OFFSET 0x00
+#define IIR_INTP_MASK 0x01
+#define IIR_IID_OFFSET 0x01
+#define IIR_IID_MASK 0x07
+
+#define IIR_INTP_NO_INTERRUPT_PENDING 1
+
+#define IIR_IID_MODEM_STATUS 0
+#define IIR_IID_TRANSMITTER_HOLDING_REGISTER_EMPTY 1
+#define IIR_IID_RECEIVED_DATA_AVAILABLE 2
+#define IIR_IID_LINE_STATUS 3
+#define IIR_IID_CHARACTER_TIMEOUT 6
+
 // Line Control Register
 /*
  * 线路控制寄存器（LCR）
@@ -139,6 +158,9 @@
 +------+------------+------+------+--------------------------------------------------------------------------------+
 */
 #define LSR 0x05
+
+#define LSR_DR 0x01
+#define LSR_THRE (1 << 5)
 
 // Modem Status Register
 /*
