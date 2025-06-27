@@ -303,7 +303,6 @@ void disable_serial_interrupt() {
 }
 
 void enable_specific_interrupt(uint8_t interrupt_flag) {
-    debugf("enable_specific_interrupt called\n");
     uint8_t mask = 0;
     int ret = 0;
 

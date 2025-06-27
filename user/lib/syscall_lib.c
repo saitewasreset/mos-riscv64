@@ -90,3 +90,7 @@ __attribute__((always_inline)) inline void syscall_interrupt_return(void) {
 int syscall_get_process_list(int max_len, u_reg_t out_process_list) {
     return msyscall(SYS_get_process_list, max_len, out_process_list, 0, 0, 0);
 }
+
+u_reg_t syscall_get_physical_address(void *va) {
+    return msyscall(SYS_get_physical_address, (u_reg_t)va);
+}

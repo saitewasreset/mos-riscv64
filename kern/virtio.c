@@ -23,7 +23,7 @@ void virtio_init(void) {
     for (size_t i = 0; i < virtio_device_count; i++) {
         struct device_node *current_node = virtio_node_list[i];
 
-        struct virtio_device_data device_data = {0};
+        struct VirtioDeviceData device_data = {0};
 
         parse_virtio_device(current_node, &device_data);
 
@@ -39,7 +39,7 @@ void virtio_init(void) {
 }
 
 int parse_virtio_device(struct device_node *node,
-                        struct virtio_device_data *device_data) {
+                        struct VirtioDeviceData *device_data) {
     int ret = 0;
     const struct property *compatible_property =
         get_property(node, "compatible");
@@ -111,14 +111,14 @@ int parse_virtio_device(struct device_node *node,
     return 0;
 }
 
-void register_virtio_device(struct virtio_device_data *device_data) {
-    struct virtio_device_data *cloned =
-        (struct virtio_device_data *)kmalloc(sizeof(struct virtio_device_data));
+void register_virtio_device(struct VirtioDeviceData *device_data) {
+    struct VirtioDeviceData *cloned =
+        (struct VirtioDeviceData *)kmalloc(sizeof(struct VirtioDeviceData));
 
-    memcpy(cloned, device_data, sizeof(struct virtio_device_data));
+    memcpy(cloned, device_data, sizeof(struct VirtioDeviceData));
 
     struct Device *temp_slot =
-        add_device("virtio_mmio", cloned, sizeof(struct virtio_device_data));
+        add_device("virtio_mmio", cloned, sizeof(struct VirtioDeviceData));
 
     add_mmio_range(temp_slot, device_data->begin_pa, device_data->len);
 }

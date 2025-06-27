@@ -50,7 +50,30 @@ void copy_user_space_to_env(struct Env *env, const void *restrict src,
 
     set_page_table(env->env_asid, env->env_pgdir);
 
-    copy_user_space(src, dst, len);
+    Pte *src_pte = NULL;
+    Pte *dst_pte = NULL;
+
+    page_lookup(env->env_pgdir, (u_reg_t)src, &src_pte);
+    page_lookup(env->env_pgdir, (u_reg_t)dst, &dst_pte);
+
+    if (src_pte == NULL) {
+        panic("trying to copy from unmapped va 0x%016lx\n", (u_reg_t)src);
+    }
+
+    if (dst_pte == NULL) {
+        if ((u_reg_t)dst >= ULIM) {
+            panic("trying to copy to unmapped kernel va 0x%016lx\n",
+                  (u_reg_t)dst);
+        } else {
+            passive_alloc((u_reg_t)dst, env->env_pgdir, env->env_asid);
+        }
+    }
+
+    allow_access_user_space();
+
+    memcpy(dst, src, len);
+
+    disallow_access_user_space();
 
     set_page_table(c_asid, c_pgdir);
 }

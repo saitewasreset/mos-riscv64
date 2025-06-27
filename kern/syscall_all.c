@@ -1004,10 +1004,6 @@ int sys_write_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
         return -E_INVAL;
     }
 
-    if (is_illegal_align(va, len) != 0) {
-        return -E_INVAL;
-    }
-
     if (is_illegal_device_pa_range(pa, len, &target_device) != 0) {
         return -E_INVAL;
     }
@@ -1068,10 +1064,6 @@ int sys_read_dev(u_reg_t va, u_reg_t pa, u_reg_t len) {
     }
 
     if (is_illegal_va_range(va, len) != 0) {
-        return -E_INVAL;
-    }
-
-    if (is_illegal_align(va, len) != 0) {
         return -E_INVAL;
     }
 
@@ -1155,12 +1147,16 @@ int sys_set_interrupt_handler(uint32_t interrupt_code, u_reg_t handler_va) {
     return 0;
 }
 
-void sys_interrupt_return(void) {
+u_reg_t sys_interrupt_return(void) {
     if (curenv == NULL) {
         panic("sys_interrupt_return called while curenv is NULL");
     }
 
     ret_env_interrupt(syscall_current_tf);
+    // 10 -> a0
+    // 在`do_syscall`中，a0将被本函数的返回值覆盖
+    // 为了使得陷阱帧中的a0的值被保留，此处需要返回该值
+    return syscall_current_tf->regs[10];
 }
 
 int sys_get_device_count(char *device_type) {
@@ -1246,6 +1242,20 @@ int sys_get_process_list(int max_len, u_reg_t out_process_list) {
     return count;
 }
 
+u_reg_t sys_get_physical_address(u_reg_t va) {
+    if (curenv == NULL) {
+        panic("sys_get_physical_address called while curenv is NULL");
+    }
+
+    u_reg_t pa = va2pa(curenv->env_pgdir, va);
+
+    if (pa == ~0ULL) {
+        return 0;
+    } else {
+        return pa;
+    }
+}
+
 void *syscall_table[MAX_SYSNO] = {
     [SYS_putchar] = sys_putchar,
     [SYS_print_cons] = sys_print_cons,
@@ -1271,7 +1281,8 @@ void *syscall_table[MAX_SYSNO] = {
     [SYS_interrupt_return] = sys_interrupt_return,
     [SYS_get_device_count] = sys_get_device_count,
     [SYS_get_device] = sys_get_device,
-    [SYS_get_process_list] = sys_get_process_list};
+    [SYS_get_process_list] = sys_get_process_list,
+    [SYS_get_physical_address] = sys_get_physical_address};
 
 /*
  * 概述：
@@ -1343,7 +1354,7 @@ void do_syscall(struct Trapframe *tf) {
     // 对于`sys_yield`该函数不会返回 -> 函数中手动置0
     // 对于`sys_exofork`父进程从此处返回，子进程不从此处返回
     // 函数中手动置0
-    int ret = func(arg1, arg2, arg3, arg4, arg5);
+    u_reg_t ret = func(arg1, arg2, arg3, arg4, arg5);
 
     curenv->env_in_syscall = 0;
 

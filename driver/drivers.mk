@@ -1,1 +1,1 @@
-DRIVERS		:= hello serial
+DRIVERS		:= hello serial virtio

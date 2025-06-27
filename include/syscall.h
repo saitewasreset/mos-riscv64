@@ -454,6 +454,7 @@ enum {
     SYS_get_device_count,
     SYS_get_device,
     SYS_get_process_list,
+    SYS_get_physical_address,
     MAX_SYSNO,
 };
 
