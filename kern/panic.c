@@ -146,8 +146,8 @@ void _panic(const char *file, int line, const char *func, const char *fmt,
     extern struct Pde *cur_pgdir;
 
     if ((u_long)curenv >= BASE_ADDR_IMM) {
-        printk("curenv:    0x%016lx (id = 0x%x, off = %d)\n", curenv,
-               curenv->env_id, curenv - envs);
+        printk("curenv:    0x%016lx (id = 0x%x, off = %d name = %s)\n", curenv,
+               curenv->env_id, curenv - envs, curenv->env_name);
     } else if (curenv) {
         printk("curenv:    0x%016lx (invalid)\n", curenv);
     } else {

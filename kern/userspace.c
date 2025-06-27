@@ -38,6 +38,23 @@ void copy_user_space(const void *restrict src, void *restrict dst, size_t len) {
     disallow_access_user_space();
 }
 
+void copy_user_space_to_env(struct Env *env, const void *restrict src,
+                            void *restrict dst, size_t len) {
+    uint16_t c_asid = 0;
+
+    if (curenv != NULL) {
+        c_asid = curenv->env_asid;
+    }
+
+    Pte *c_pgdir = cur_pgdir;
+
+    set_page_table(env->env_asid, env->env_pgdir);
+
+    copy_user_space(src, dst, len);
+
+    set_page_table(c_asid, c_pgdir);
+}
+
 void map_user_vpt(struct Env *env) {
     Pte *p1 = env->env_pgdir;
 

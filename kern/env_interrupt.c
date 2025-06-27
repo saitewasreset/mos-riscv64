@@ -50,43 +50,80 @@ void handle_env_interrupt(struct Trapframe *tf, uint32_t interrupt_code) {
         return;
     }
 
-    if (env->env_status == ENV_NOT_RUNNABLE) {
-        if (env->env_in_syscall == 1) {
-            env->env_in_syscall = 0;
-
-            // 将当前系统调用的返回值设置为-E_INTR
-            // 10 -> ra
-            env->env_tf.regs[10] = (u_reg_t)-E_INTR;
-        }
-
-        // 唤醒进程
-        env->env_status = ENV_RUNNABLE;
-        TAILQ_INSERT_TAIL(&env_sched_list, env, env_sched_link);
-    }
-
-    // 将当前进程上下文保存到用户异常栈
-    // 2 -> sp
-    u_reg_t user_sp = tf->regs[2];
-
-    if ((user_sp >= USTACKTOP) && (user_sp < UXSTACKTOP)) {
-        // 用户异常重入
-        user_sp -= sizeof(struct Trapframe);
-    } else {
-        user_sp = UXSTACKTOP - sizeof(struct Trapframe);
-    }
-
-    copy_user_space(tf, (void *)user_sp, sizeof(struct Trapframe));
-
-    env->env_tf = *tf;
-
-    // 2 -> sp
-    tf->regs[2] = user_sp;
-
-    // 设置异常返回地址：调用用户异常处理函数
-    tf->sepc = env->handler_function_va;
-
     // 暂时关闭该外部中断
     plic_set_prority(interrupt_code, 0);
+
+    // 当前运行的环境即是接收中断的环境
+    if (curenv == env) {
+        // 当前环境一定是RUNNABLE状态
+        // 直接修改tf并返回
+
+        // 将当前进程上下文保存到用户异常栈
+        // 2 -> sp
+        u_reg_t user_sp = tf->regs[2];
+
+        if ((user_sp >= USTACKTOP) && (user_sp < UXSTACKTOP)) {
+            // 用户异常重入
+            user_sp -= sizeof(struct Trapframe);
+        } else {
+            user_sp = UXSTACKTOP - sizeof(struct Trapframe);
+        }
+
+        copy_user_space(tf, (void *)user_sp, sizeof(struct Trapframe));
+
+        // 2 -> sp
+        tf->regs[2] = user_sp;
+
+        // 设置异常返回地址：调用用户异常处理函数
+        tf->sepc = env->handler_function_va;
+
+        plic_mark_finish(interrupt_code);
+
+        // 直接返回，将恢复`tf`中的陷阱帧
+    } else {
+        // 当前环境不是运行中的环境，发生切换
+        if (env->env_status == ENV_NOT_RUNNABLE) {
+            if (env->env_in_syscall == 1) {
+                env->env_in_syscall = 0;
+
+                // 将当前系统调用的返回值设置为-E_INTR
+                // 10 -> ra
+                env->env_tf.regs[10] = (u_reg_t)-E_INTR;
+            }
+
+            // 唤醒进程
+            env->env_status = ENV_RUNNABLE;
+            TAILQ_INSERT_HEAD(&env_sched_list, env, env_sched_link);
+        }
+
+        // 将当前进程上下文保存到用户异常栈
+        // 2 -> sp
+        u_reg_t user_sp = env->env_tf.regs[2];
+
+        if ((user_sp >= USTACKTOP) && (user_sp < UXSTACKTOP)) {
+            // 用户异常重入
+            user_sp -= sizeof(struct Trapframe);
+        } else {
+            user_sp = UXSTACKTOP - sizeof(struct Trapframe);
+        }
+
+        env->env_tf.sie = tf->sie;
+        env->env_tf.sip = tf->sip;
+
+        copy_user_space_to_env(env, &env->env_tf, (void *)user_sp,
+                               sizeof(struct Trapframe));
+
+        // 2 -> sp
+        env->env_tf.regs[2] = user_sp;
+
+        // 设置异常返回地址：调用用户异常处理函数
+        env->env_tf.sepc = env->handler_function_va;
+
+        plic_mark_finish(interrupt_code);
+
+        // 切换到`env`运行
+        env_run(env);
+    }
 }
 
 int ret_env_interrupt(struct Trapframe *tf) {

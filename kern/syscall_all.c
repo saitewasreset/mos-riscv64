@@ -3,6 +3,7 @@
 #include <env_interrupt.h>
 #include <error.h>
 #include <fork.h>
+#include <kmalloc.h>
 #include <mmu.h>
 #include <plic.h>
 #include <pmap.h>
@@ -18,6 +19,7 @@
 #include <virt.h>
 
 extern struct Env *curenv;
+extern struct Env envs[NENV];
 
 static struct Trapframe *syscall_current_tf;
 
@@ -1197,6 +1199,53 @@ int sys_get_device(char *device_type, size_t idx, size_t max_data_len,
                                     (void *)out_device_data);
 }
 
+int sys_get_process_list(int max_len, u_reg_t out_process_list) {
+    if (curenv == NULL) {
+        panic("sys_get_process_list called while curenv is NULL");
+    }
+
+    if (max_len < 0) {
+        return -E_INVAL;
+    }
+
+    if ((is_illegal_va_range(out_process_list,
+                             max_len * sizeof(struct Process))) == 1) {
+        return -E_INVAL;
+    }
+
+    size_t max_process_count =
+        ((size_t)max_len) < NENV ? (((size_t)max_len)) : NENV;
+    struct Process *buffer =
+        (struct Process *)kmalloc(max_process_count * sizeof(struct Process));
+
+    if (buffer == NULL) {
+        panic("sys_get_process_list: cannot allocate buffer");
+    }
+
+    int count = 0;
+
+    for (size_t i = 0; i < NENV; i++) {
+        struct Env *cur = &envs[i];
+
+        if (cur->env_status != ENV_FREE) {
+            buffer[count].env_id = cur->env_id;
+            buffer[count].env_parent_id = cur->env_parent_id;
+            buffer[count].env_pri = cur->env_pri;
+            buffer[count].env_status = cur->env_status;
+            buffer[count].env_runs = cur->env_runs;
+            strcpy(buffer[count].env_name, cur->env_name);
+            count++;
+        }
+    }
+
+    copy_user_space(buffer, (void *)out_process_list,
+                    sizeof(struct Process) * (size_t)count);
+
+    kfree(buffer);
+
+    return count;
+}
+
 void *syscall_table[MAX_SYSNO] = {
     [SYS_putchar] = sys_putchar,
     [SYS_print_cons] = sys_print_cons,
@@ -1222,7 +1271,7 @@ void *syscall_table[MAX_SYSNO] = {
     [SYS_interrupt_return] = sys_interrupt_return,
     [SYS_get_device_count] = sys_get_device_count,
     [SYS_get_device] = sys_get_device,
-};
+    [SYS_get_process_list] = sys_get_process_list};
 
 /*
  * 概述：

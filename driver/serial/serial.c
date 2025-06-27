@@ -1,9 +1,14 @@
 #include "char_queue.h"
+#include "error.h"
+#include "mmu.h"
 #include "regs.h"
 #include <device.h>
 #include <lib.h>
 #include <serial.h>
+#include <serialreq.h>
 #include <user_interrupt.h>
+
+#define REQVA 0x60000000
 
 static struct CharQueue tx_queue;
 static struct CharQueue rx_queue;
@@ -21,7 +26,14 @@ void disable_serial_interrupt();
 void enable_specific_interrupt(uint8_t interrupt_flag);
 void disable_specific_interrupt(uint8_t interrupt_flag);
 
+static size_t serial_read(char *buf, size_t len);
 static void serial_write(const char *buf, size_t len);
+
+static void serve_read(uint32_t whom, struct SerialReqPayload *payload);
+static void serve_write(uint32_t whom, struct SerialReqPayload *payload);
+
+static void *serve_table[MAX_SERIALREQNO] = {
+    [SERIALREQ_READ] = serve_read, [SERIALREQ_WRITE] = serve_write};
 
 // Modem 状态改变
 static void handle_modem_status(void);
@@ -181,7 +193,44 @@ int main(void) {
 
     debugf("serial: serial init done\n");
 
+    uint32_t whom = 0;
+    uint64_t val = 0;
+    uint32_t perm = 0;
+
+    void (*func)(uint32_t whom, struct SerialReqPayload *payload) = NULL;
+
     while (1) {
+        int ret = ipc_recv(&whom, &val, (void *)REQVA, &perm);
+
+        if (ret != 0) {
+            if (ret == -E_INTR) {
+                continue;
+            } else {
+                debugf("serial: failed to receive request: %d\n", ret);
+            }
+        }
+
+        if (val >= MAX_SERIALREQNO) {
+            debugf("serial: invalid request code %lu from %08x\n", val, whom);
+
+            ipc_send(whom, (uint64_t)-SERIALREQ_NO_FUNC, NULL, 0);
+
+            panic_on(syscall_mem_unmap(0, (void *)REQVA));
+
+            continue;
+        }
+
+        if (!(perm & PTE_V)) {
+            debugf("serial: invalid request from %08x: no argument page\n",
+                   whom);
+            ipc_send(whom, (uint64_t)-SERIALREQ_NO_PAYLOAD, NULL, 0);
+            continue;
+        }
+
+        func = serve_table[val];
+
+        func(whom, (struct SerialReqPayload *)REQVA);
+        panic_on(syscall_mem_unmap(0, (void *)REQVA));
     }
 
     return 0;
@@ -254,6 +303,7 @@ void disable_serial_interrupt() {
 }
 
 void enable_specific_interrupt(uint8_t interrupt_flag) {
+    debugf("enable_specific_interrupt called\n");
     uint8_t mask = 0;
     int ret = 0;
 
@@ -398,4 +448,43 @@ static void serial_write(const char *buf, size_t len) {
     }
 
     enable_specific_interrupt(IER_ETBEI);
+}
+
+static size_t serial_read(char *buf, size_t len) {
+    size_t actual = 0;
+
+    while (!is_empty(&rx_queue)) {
+        if (actual >= len) {
+            break;
+        }
+
+        char data = dequeue(&rx_queue);
+
+        buf[actual] = data;
+        actual++;
+    }
+
+    return actual;
+}
+
+static void serve_read(uint32_t whom, struct SerialReqPayload *payload) {
+    if (payload->max_len > MAX_PAYLOAD_SIZE) {
+        ipc_send(whom, (uint64_t)-SERIALREQ_INVAL, NULL, 0);
+        return;
+    }
+
+    size_t actual_read = serial_read((char *)payload, payload->max_len);
+
+    ipc_send(whom, actual_read, (char *)REQVA, PTE_V | PTE_RW | PTE_USER);
+}
+
+static void serve_write(uint32_t whom, struct SerialReqPayload *payload) {
+    if (payload->max_len > MAX_PAYLOAD_SIZE) {
+        ipc_send(whom, (uint64_t)-SERIALREQ_INVAL, NULL, 0);
+        return;
+    }
+
+    serial_write(payload->buf, payload->max_len);
+
+    ipc_send(whom, SERIALREQ_SUCCESS, NULL, 0);
 }

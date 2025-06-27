@@ -569,9 +569,11 @@ int syscall_get_device(char *device_type, size_t idx, size_t max_data_len,
 
 void syscall_interrupt_return(void);
 
+int syscall_get_process_list(int max_len, u_reg_t out_process_list);
+
 // ipc.c
-void ipc_send(uint32_t whom, uint64_t val, const void *srcva, uint32_t perm);
-uint64_t ipc_recv(uint32_t *whom, void *dstva, uint32_t *perm);
+int ipc_send(uint32_t whom, uint64_t val, const void *srcva, uint32_t perm);
+int ipc_recv(uint32_t *whom, uint64_t *out_val, void *dstva, uint32_t *perm);
 
 // wait.c
 void wait(uint32_t envid);

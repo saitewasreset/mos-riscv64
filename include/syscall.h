@@ -453,6 +453,7 @@ enum {
     SYS_interrupt_return,
     SYS_get_device_count,
     SYS_get_device,
+    SYS_get_process_list,
     MAX_SYSNO,
 };
 

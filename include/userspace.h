@@ -15,6 +15,9 @@ void disallow_access_user_space();
 
 void copy_user_space(const void *restrict src, void *restrict dst, size_t len);
 
+void copy_user_space_to_env(struct Env *env, const void *restrict src,
+                            void *restrict dst, size_t len);
+
 void map_user_vpt(struct Env *env);
 void unmap_user_vpt(struct Env *env);
 

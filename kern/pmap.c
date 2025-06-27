@@ -687,6 +687,14 @@ void page_remove(Pte *pgdir, u_int asid, u_long va) {
 }
 /* End of Key Code "page_remove" */
 
+void set_page_table(uint16_t asid, Pte *p1) {
+    u_reg_t pa = PADDR((u_reg_t)p1);
+
+    set_satp(asid, PPN(pa));
+
+    tlb_flush_all();
+}
+
 void physical_memory_manage_check(void) {
     printk("physical_memory_manage_check: test begin\n");
 

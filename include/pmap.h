@@ -351,4 +351,8 @@ void passive_alloc(u_reg_t va, Pte *pgdir, uint16_t asid);
 
 void kernel_passive_alloc(u_reg_t va);
 
+void set_satp(u_reg_t asid, u_reg_t p1_ppn);
+
+void set_page_table(uint16_t asid, Pte *p1);
+
 #endif /* _PMAP_H_ */

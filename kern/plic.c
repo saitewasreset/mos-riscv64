@@ -270,7 +270,8 @@ void handle_plic_interrupt(struct Trapframe *tf) {
                interrupt_code);
     }
 
-    plic_mark_finish(interrupt_code);
+    // 某些interrupt_handler可能不会返回！！
+    // 例如，`handle_env_interrupt`可能直接切换到其它进程运行！
 }
 
 uint32_t plic_get_interrupt_count(void) {

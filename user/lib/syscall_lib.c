@@ -86,3 +86,7 @@ int syscall_get_device(char *device_type, size_t idx, size_t max_data_len,
 __attribute__((always_inline)) inline void syscall_interrupt_return(void) {
     msyscall(SYS_interrupt_return, 0, 0, 0, 0, 0);
 }
+
+int syscall_get_process_list(int max_len, u_reg_t out_process_list) {
+    return msyscall(SYS_get_process_list, max_len, out_process_list, 0, 0, 0);
+}

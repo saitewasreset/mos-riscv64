@@ -602,7 +602,8 @@ static void load_icode(struct Env *e, const void *binary, size_t size) {
  * - 可能分配物理页（通过env_setup_vm和load_icode）
  * - 若ELF校验失败触发panic（通过load_icode）
  */
-struct Env *env_create(const void *binary, size_t size, uint32_t priority) {
+struct Env *env_create(const char *env_name, const void *binary, size_t size,
+                       uint32_t priority) {
     struct Env *e;
     /* Step 1: Use 'env_alloc' to alloc a new env, with 0 as 'parent_id'. */
     /* Exercise 3.7: Your code here. (1/3) */
@@ -618,6 +619,8 @@ struct Env *env_create(const void *binary, size_t size, uint32_t priority) {
 
     e->env_pri = priority;
     e->env_status = ENV_RUNNABLE;
+
+    strcpy(e->env_name, env_name);
 
     /* Step 3: Use 'load_icode' to load the image from 'binary', and insert 'e'
      * into 'env_sched_list' using 'TAILQ_INSERT_HEAD'. */

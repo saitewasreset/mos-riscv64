@@ -3,7 +3,8 @@
 #include <lib.h>
 
 int main() {
-    u_int who, i;
+    uint32_t who;
+    uint64_t i;
 
     if ((who = fork()) != 0) {
         // get the ball rolling
@@ -13,7 +14,7 @@ int main() {
 
     for (;;) {
         debugf("%x am waiting.....\n", syscall_getenvid());
-        i = ipc_recv(&who, 0, 0);
+        ipc_recv(&who, &i, 0, 0);
 
         debugf("%x got %d from %x\n", syscall_getenvid(), i, who);
 

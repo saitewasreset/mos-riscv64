@@ -18,6 +18,8 @@
 #define ENV_RUNNABLE 1
 #define ENV_NOT_RUNNABLE 2
 
+#define MAXENVNAME 32
+
 /*
  * 进程创建步骤(`env_create`)
  *
@@ -71,6 +73,17 @@ struct Env {
 
     // Lab 6 scheduler counts
     uint64_t env_runs; // number of times we've been env_run'ed
+
+    char env_name[MAXENVNAME];
+};
+
+struct Process {
+    char env_name[MAXENVNAME];
+    uint32_t env_id;
+    uint32_t env_parent_id;
+    uint32_t env_pri;
+    uint64_t env_runs;
+    uint32_t env_status;
 };
 
 LIST_HEAD(Env_list, Env);
@@ -206,7 +219,8 @@ void env_free(struct Env *);
  * - 可能分配物理页（通过env_setup_vm和load_icode）
  * - 若ELF校验失败触发panic（通过load_icode）
  */
-struct Env *env_create(const void *binary, size_t size, uint32_t priority);
+struct Env *env_create(const char *env_name, const void *binary, size_t size,
+                       uint32_t priority);
 /*
  * 概述：
  *
@@ -336,7 +350,7 @@ void envid2env_check(void);
     ({                                                                         \
         extern u_char binary_##x##_start[];                                    \
         extern u_int binary_##x##_size;                                        \
-        env_create(binary_##x##_start, (u_int)binary_##x##_size, y);           \
+        env_create("_", binary_##x##_start, (u_int)binary_##x##_size, y);      \
     })
 
 /*
@@ -357,7 +371,20 @@ void envid2env_check(void);
     ({                                                                         \
         extern u_char binary_##x##_start[];                                    \
         extern u_int binary_##x##_size;                                        \
-        env_create(binary_##x##_start, (u_int)binary_##x##_size, 1);           \
+        env_create("_", binary_##x##_start, (u_int)binary_##x##_size, 1);      \
     })
 
+#define ENV_CREATE_NAME_PRIORITY(name, x, y)                                   \
+    ({                                                                         \
+        extern u_char binary_##x##_start[];                                    \
+        extern u_int binary_##x##_size;                                        \
+        env_create(name, binary_##x##_start, (u_int)binary_##x##_size, y);     \
+    })
+
+#define ENV_CREATE_NAME(name, x)                                               \
+    ({                                                                         \
+        extern u_char binary_##x##_start[];                                    \
+        extern u_int binary_##x##_size;                                        \
+        env_create(name, binary_##x##_start, (u_int)binary_##x##_size, 1);     \
+    })
 #endif // !_ENV_H_

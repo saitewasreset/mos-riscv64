@@ -9,23 +9,23 @@
 // -E_IPC_NOT_RECV.
 //
 // Hint: use syscall_yield() to be CPU-friendly.
-void ipc_send(uint32_t whom, uint64_t val, const void *srcva, uint32_t perm) {
+int ipc_send(uint32_t whom, uint64_t val, const void *srcva, uint32_t perm) {
     int r;
     while ((r = syscall_ipc_try_send(whom, val, srcva, perm)) ==
            -E_IPC_NOT_RECV) {
         syscall_yield();
     }
-    user_assert(r == 0);
+    return r;
 }
 
 // Receive a value.  Return the value and store the caller's envid
 // in *whom.
 //
 // Hint: use env to discover the value and who sent it.
-uint64_t ipc_recv(uint32_t *whom, void *dstva, uint32_t *perm) {
+int ipc_recv(uint32_t *whom, uint64_t *out_val, void *dstva, uint32_t *perm) {
     int r = syscall_ipc_recv(dstva);
     if (r != 0) {
-        user_panic("syscall_ipc_recv err: %d", r);
+        return r;
     }
 
     if (whom) {
@@ -36,5 +36,9 @@ uint64_t ipc_recv(uint32_t *whom, void *dstva, uint32_t *perm) {
         *perm = env->env_ipc_perm;
     }
 
-    return env->env_ipc_value;
+    if (out_val) {
+        *out_val = env->env_ipc_value;
+    }
+
+    return r;
 }

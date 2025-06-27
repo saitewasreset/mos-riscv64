@@ -61,7 +61,9 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
 
     allocation_summarize();
 
-    ENV_CREATE(user_serial);
+    ENV_CREATE_NAME("serial", user_serial);
+    ENV_CREATE_NAME("serial_test", user_serialtest);
+    ENV_CREATE_NAME("process_test", user_processtest);
 
     printk("My life for Super Earth!\n");
     // lab2:
@@ -73,7 +75,7 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
     // env_init();
 
     // lab3:
-    // ENV_CREATE_PRIORITY(user_bare_loop, 1);
+    ENV_CREATE_PRIORITY(user_bare_loop, 1);
     // ENV_CREATE_PRIORITY(user_bare_loop, 2);
 
     // lab4:
