@@ -248,8 +248,7 @@ void block_cmd(size_t block_device_idx, uint32_t type, uint32_t sector,
         .ring[queue_avail_area[block_device_idx].idx] = d1;
 
     queue_avail_area[block_device_idx].idx =
-        (queue_avail_area[block_device_idx].idx + 1) %
-        queue_size_by_idx[block_device_idx];
+        queue_avail_area[block_device_idx].idx + 1;
 
     u_reg_t current_base_addr =
         base_addr[block_device_idx_to_virtio_idx[block_device_idx]];
@@ -296,7 +295,9 @@ void handle_block_interrupt(size_t block_device_idx) {
 static bool handle_used(size_t block_device_idx, uint16_t used_idx) {
     uint16_t d1, d2, d3;
 
-    d1 = queue_used_area[block_device_idx].ring[used_idx].id;
+    d1 = queue_used_area[block_device_idx]
+             .ring[used_idx % queue_size_by_idx[block_device_idx]]
+             .id;
 
     if ((queue_desc_area[block_device_idx][d1].flags & VIRTQ_DESC_F_NEXT) ==
         0) {
