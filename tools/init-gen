@@ -24,7 +24,21 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
     riscv64_vm_init();
     page_init();
 
+	kmalloc_init();
+
 	env_init();
+
+	device_tree_init(dtb_address);
+
+    plic_init();
+
+    virtio_init();
+
+    serial_init();
+
+	ENV_CREATE_NAME("serial", user_serial);
+    ENV_CREATE_NAME("virtio", user_virtio);
+	ENV_CREATE_NAME("idle", user_bare_loop);
 
 '"$out"'
 
