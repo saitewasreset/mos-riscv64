@@ -13,7 +13,13 @@ USERLIB              := entry.o \
 			user_interrupt_wrap.o \
 			serial.o \
 			process.o \
-			virtio.o
+			virtio.o \
+			pageref.o \
+			file.o \
+			fsipc.o \
+			fd.o \
+			console.o \
+			pipe.o
 
 
 USERLIB := $(addprefix lib/, $(USERLIB)) $(wildcard ../lib/*.o)

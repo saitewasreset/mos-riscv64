@@ -455,6 +455,10 @@ enum {
     SYS_get_device,
     SYS_get_process_list,
     SYS_get_physical_address,
+    // 返回当前进程的指定虚拟地址对应的物理页是否被写入过
+    // 若地址未映射，返回0
+    SYS_is_dirty,
+    SYS_pageref,
     MAX_SYSNO,
 };
 

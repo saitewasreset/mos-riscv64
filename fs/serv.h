@@ -2,8 +2,6 @@
 #include <lib.h>
 #include <mmu.h>
 
-#define PTE_DIRTY 0x0004 // file system block cache is dirty
-
 #define SECT_SIZE 512                     /* Bytes per disk sector */
 #define SECT2BLK (BLOCK_SIZE / SECT_SIZE) /* sectors to a block */
 
@@ -14,57 +12,11 @@
 #define DISKMAX 0x40000000
 
 /* ide.c */
-/*
- * 概述：
- *   用户态IDE磁盘读取函数。通过系统调用配置IDE控制器实现多扇区读取，
- *   遵循Intel PIIX4 IDE控制器的编程规范。执行9步操作流程，包含LBA模式设置、
- *   状态检查及4字节对齐数据传输。
- *
- *   读取数据阶段，每次系统调用传递4字节数据。
- *
- * Precondition：
- *   - diskno必须为0或1
- *   - secno的有效性隐含由逻辑块地址结构保证（28位LBA地址）
- *   - 目标缓冲区dst必须已分配且可写入至少nsecs*512字节
- *
- * Postcondition：
- *   - 成功：nsecs个扇区（每个512字节）数据存储到dst，按序递增secno
- *   - 失败：任何系统调用错误立即触发user panic
- *
- * 副作用：
- *   - 修改IDE控制器的6个设备寄存器（NSECT/LBAL/LBAM/LBAH/DEVICE/STATUS）
- *   - 通过MALTA_IDE_DATA进行数据传输，改变设备缓冲区内容
- *   - 可能多次调用syscall_yield改变进程调度状态（`wait_ide_ready`）
- *
- * 关键点：
- *   - 使用位运算分解28位LBA地址（0-27位）
- *   - 每个扇区数据传输分128次，每次4字节（SECT_SIZE/4循环）
- */
-void ide_read(u_int diskno, u_int secno, void *dst, u_int nsecs);
-/*
- * 概述：
- *   用户态IDE磁盘写入函数。通过系统调用实现与ide_read对称的写操作流程，
- *   主要区别在于命令码(DMA写命令)及数据传输方向。
- *
- * Precondition：
- *   - diskno必须为0或1
- *   - secno的有效性隐含由逻辑块地址结构保证（28位LBA地址）
- *   - 源数据缓冲区src必须包含有效数据且可读取至少nsecs*512字节
- *
- * Postcondition：
- *   - 成功：nsecs个扇区数据从src写入磁盘，按序递增secno
- *   - 失败：任何系统调用错误立即触发user panic
- *
- * 副作用：
- *   - 改变磁盘物理存储内容（永久性存储改变）
- *   - 修改IDE控制器的6个设备寄存器（NSECT/LBAL/LBAM/LBAH/DEVICE/STATUS）
- *   - 通过MALTA_IDE_DATA进行数据传输，改变设备缓冲区内容
- *   - 可能多次调用syscall_yield改变进程调度状态（`wait_ide_ready`）
- *
- * 关键点：
- *   - 写命令触发后需严格等待设备就绪，防止数据损坏
- */
-void ide_write(u_int diskno, u_int secno, void *src, u_int nsecs);
+// 向VirtIO驱动发送请求，读取指定的块
+void sector_read(uint32_t secno, void *dst, uint32_t nsecs);
+
+// 向VirtIO驱动发送请求，写入指定的块
+void sector_write(uint32_t secno, void *src, uint32_t nsecs);
 
 /* fs.c */
 /*
@@ -165,7 +117,7 @@ int file_create(char *path, struct File **file);
  *   - 调用read_block分配物理页，修改页表映射
  *   - 可能触发IDE磁盘读取操作，改变设备状态
  */
-int file_get_block(struct File *f, u_int blockno, void **pblk);
+int file_get_block(struct File *f, uint32_t blockno, void **pblk);
 /*
  * 概述：
  *   设置文件逻辑大小为指定值。
@@ -199,7 +151,7 @@ int file_get_block(struct File *f, u_int blockno, void **pblk);
  *   - 父目录刷新确保目录条目及时更新，但可能引入额外I/O开销
  *   - 函数无条件返回0，错误处理依赖子函数panic机制
  */
-int file_set_size(struct File *f, u_int newsize);
+int file_set_size(struct File *f, uint32_t newsize);
 /*
  * 概述：
  *   关闭文件并同步相关数据。强制刷新文件内容至磁盘，
@@ -289,7 +241,7 @@ int file_remove(char *path);
  *   - alloc=0确保不自动分配新块，块不存在时直接传递错误而非静默处理
  *   - 仅设置脏标记，不触发立即写回，依赖后续同步操作持久化
  */
-int file_dirty(struct File *f, u_int offset);
+int file_dirty(struct File *f, uint32_t offset);
 /*
  * 概述：
  *   将文件的所有脏块刷新至磁盘。遍历文件使用的所有块，
@@ -393,7 +345,7 @@ extern uint32_t *bitmap;
  *   - 直接使用disk_addr计算虚拟地址，依赖线性映射规则
  *   - 不处理块内容初始化，依赖后续读写操作填充
  */
-int map_block(u_int);
+int map_block(uint32_t);
 /*
  * 概述：
  *   分配并映射一个磁盘块。包含分配逻辑与内存映射两步操作，

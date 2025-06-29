@@ -21,7 +21,8 @@ static void fs_check() {
     u_int *bits;
 
     // back up bitmap
-    if ((r = syscall_mem_alloc(0, (void *)PTMAP, PTE_D)) < 0) {
+    if ((r = syscall_mem_alloc(0, (void *)PTMAP, PTE_V | PTE_RW | PTE_USER)) <
+        0) {
         user_panic("syscall_mem_alloc: %d", r);
     }
 

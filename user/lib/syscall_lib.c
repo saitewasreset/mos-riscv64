@@ -94,3 +94,7 @@ int syscall_get_process_list(int max_len, u_reg_t out_process_list) {
 u_reg_t syscall_get_physical_address(void *va) {
     return msyscall(SYS_get_physical_address, (u_reg_t)va);
 }
+
+int syscall_is_dirty(void *va) { return msyscall(SYS_is_dirty, (u_reg_t)va); }
+
+int syscall_pageref(void *va) { return msyscall(SYS_is_dirty, (u_reg_t)va); }

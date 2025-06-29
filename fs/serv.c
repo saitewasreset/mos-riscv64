@@ -4,6 +4,7 @@
  */
 
 #include "serv.h"
+#include "error.h"
 #include <fd.h>
 #include <fsreq.h>
 #include <lib.h>
@@ -17,7 +18,7 @@
  */
 struct Open {
     struct File *o_file;
-    u_int o_fileid;
+    uint32_t o_fileid;
     int o_mode;
     struct Filefd *o_ff;
 };
@@ -27,7 +28,7 @@ struct Open {
  */
 #define MAXOPEN 1024
 
-#define FILEVA 0x60000000
+#define FILEVA 0x60000000ULL
 
 /*
  * Open file table, a per-environment array of open files
@@ -37,7 +38,7 @@ struct Open opentab[MAXOPEN];
 /*
  * Virtual address at which to receive page mappings containing client requests.
  */
-#define REQVA 0x0ffff000
+#define REQVA 0x0ffff000ULL
 
 /*
  * 概述：
@@ -65,7 +66,7 @@ struct Open opentab[MAXOPEN];
  */
 void serve_init(void) {
     int i;
-    u_int va;
+    u_reg_t va;
 
     // Set virtual address to map.
     va = FILEVA;
@@ -115,7 +116,8 @@ int open_alloc(struct Open **o) {
         switch (pageref(opentab[i].o_ff)) {
         case 0:
             if ((r = syscall_mem_alloc(0, opentab[i].o_ff,
-                                       PTE_D | PTE_LIBRARY)) < 0) {
+                                       PTE_V | PTE_RW | PTE_USER |
+                                           PTE_LIBRARY)) < 0) {
                 return r;
             }
         // 注意：此处是Fallthrough case，没有`break`，
@@ -159,7 +161,7 @@ int open_alloc(struct Open **o) {
  *   - 仅通过pageref>1判断文件打开状态，未实际验证envid与文件的所属关系
  *   - 直接使用fileid作为数组索引，需严格校验范围防止越界
  */
-int open_lookup(u_int envid, u_int fileid, struct Open **po) {
+int open_lookup(uint32_t envid, uint32_t fileid, struct Open **po) {
     struct Open *o;
 
     if (fileid >= MAXOPEN) {
@@ -223,7 +225,7 @@ int open_lookup(u_int envid, u_int fileid, struct Open **po) {
  *   - 错误处理链式结构：任一环节失败立即终止并返回错误
  *   - 文件描述符页通过PTE_D|PTE_LIBRARY权限共享，允许跨进程访问
  */
-void serve_open(u_int envid, struct Fsreq_open *rq) {
+void serve_open(uint32_t envid, struct Fsreq_open *rq) {
     struct File *f;
     struct Filefd *ff;
     int r;
@@ -266,7 +268,7 @@ void serve_open(u_int envid, struct Fsreq_open *rq) {
     o->o_mode = rq->req_omode;
     ff->f_fd.fd_omode = o->o_mode;
     ff->f_fd.fd_dev_id = devfile.dev_id;
-    ipc_send(envid, 0, o->o_ff, PTE_D | PTE_LIBRARY);
+    ipc_send(envid, 0, o->o_ff, PTE_V | PTE_RW | PTE_USER | PTE_LIBRARY);
 }
 
 /*
@@ -299,9 +301,9 @@ void serve_open(u_int envid, struct Fsreq_open *rq) {
  *   - IPC返回的虚拟地址直接暴露缓存页，依赖PTE_LIBRARY实现跨进程共享
  *   - 错误处理立即终止流程，未释放已分配资源
  */
-void serve_map(u_int envid, struct Fsreq_map *rq) {
+void serve_map(uint32_t envid, struct Fsreq_map *rq) {
     struct Open *pOpen;
-    u_int filebno;
+    uint32_t filebno;
     void *blk;
     int r;
 
@@ -317,7 +319,7 @@ void serve_map(u_int envid, struct Fsreq_map *rq) {
         return;
     }
 
-    ipc_send(envid, 0, blk, PTE_D | PTE_LIBRARY);
+    ipc_send(envid, 0, blk, PTE_V | PTE_RW | PTE_USER | PTE_LIBRARY);
 }
 
 /*
@@ -340,7 +342,7 @@ void serve_map(u_int envid, struct Fsreq_map *rq) {
  * 关键点：
  *   - 文件尺寸扩展时不预分配存储，依赖后续获取/写入操作
  */
-void serve_set_size(u_int envid, struct Fsreq_set_size *rq) {
+void serve_set_size(uint32_t envid, struct Fsreq_set_size *rq) {
     struct Open *pOpen;
     int r;
     if ((r = open_lookup(envid, rq->req_fileid, &pOpen)) < 0) {
@@ -383,7 +385,7 @@ void serve_set_size(u_int envid, struct Fsreq_set_size *rq) {
  *   - 调用file_close触发文件数据同步，修改磁盘内容
  *   - 修改父目录元数据脏页状态
  */
-void serve_close(u_int envid, struct Fsreq_close *rq) {
+void serve_close(uint32_t envid, struct Fsreq_close *rq) {
     struct Open *pOpen;
 
     int r;
@@ -419,7 +421,7 @@ void serve_close(u_int envid, struct Fsreq_close *rq) {
  * 关键点：
  *   - 未检测文件是否被其他进程打开，存在数据损坏风险
  */
-void serve_remove(u_int envid, struct Fsreq_remove *rq) {
+void serve_remove(uint32_t envid, struct Fsreq_remove *rq) {
     // Step 1: Remove the file specified in 'rq' using 'file_remove' and store
     // its return value.
     int r;
@@ -452,7 +454,7 @@ void serve_remove(u_int envid, struct Fsreq_remove *rq) {
  * 关键点：
  *   - 脏标记仅影响缓存状态，实际写回依赖同步机制
  */
-void serve_dirty(u_int envid, struct Fsreq_dirty *rq) {
+void serve_dirty(uint32_t envid, struct Fsreq_dirty *rq) {
     struct Open *pOpen;
     int r;
 
@@ -490,7 +492,7 @@ void serve_dirty(u_int envid, struct Fsreq_dirty *rq) {
  * 关键点：
  *   - 响应延迟：需等待所有I/O完成才发送IPC确认
  */
-void serve_sync(u_int envid) {
+void serve_sync(uint32_t envid) {
     fs_sync();
     ipc_send(envid, 0, 0, 0);
 }
@@ -516,23 +518,32 @@ void *serve_table[MAX_FSREQNO] = {
  *  to handle the request.
  */
 void serve(void) {
-    u_int req, whom, perm;
-    void (*func)(u_int, u_int);
+    uint64_t req;
+    uint32_t whom, perm;
+    void (*func)(uint32_t, uint32_t);
 
     for (;;) {
         perm = 0;
 
-        req = ipc_recv(&whom, (void *)REQVA, &perm);
+        int ret = ipc_recv(&whom, &req, (void *)REQVA, &perm);
+
+        if (ret != 0) {
+            if (ret == -E_INTR) {
+                continue;
+            } else {
+                debugf("fs: failed to receive request: %d\n", ret);
+            }
+        }
 
         // All requests must contain an argument page
         if (!(perm & PTE_V)) {
-            debugf("Invalid request from %08x: no argument page\n", whom);
+            debugf("fs: Invalid request from %08x: no argument page\n", whom);
             continue; // just leave it hanging, waiting for the next request.
         }
 
         // The request number must be valid.
         if (req < 0 || req >= MAX_FSREQNO) {
-            debugf("Invalid request code %d from %08x\n", req, whom);
+            debugf("fs: Invalid request code %d from %08x\n", req, whom);
             panic_on(syscall_mem_unmap(0, (void *)REQVA));
             continue;
         }
@@ -555,10 +566,12 @@ void serve(void) {
 int main() {
     user_assert(sizeof(struct File) == FILE_STRUCT_SIZE);
 
-    debugf("FS is running\n");
+    debugf("fs: FS is running\n");
 
     serve_init();
     fs_init();
+
+    debugf("fs: WE SHALL NEVER SURRENDER!\n");
 
     serve();
     return 0;

@@ -1256,6 +1256,34 @@ u_reg_t sys_get_physical_address(u_reg_t va) {
     }
 }
 
+int sys_is_dirty(u_reg_t va) {
+    if (curenv == NULL) {
+        panic("sys_get_physical_address called while curenv is NULL");
+    }
+
+    Pte *pte = NULL;
+
+    if (page_lookup(curenv->env_pgdir, va, &pte) != NULL) {
+        return ((*pte) & PTE_DIRTY) != 0;
+    }
+
+    return 0;
+}
+
+int sys_pageref(u_reg_t va) {
+    if (curenv == NULL) {
+        panic("sys_get_physical_address called while curenv is NULL");
+    }
+
+    struct Page *page = page_lookup(curenv->env_pgdir, va, NULL);
+
+    if (page != NULL) {
+        return (int)(page->pp_ref);
+    }
+
+    return 0;
+}
+
 void *syscall_table[MAX_SYSNO] = {
     [SYS_putchar] = sys_putchar,
     [SYS_print_cons] = sys_print_cons,
@@ -1282,7 +1310,9 @@ void *syscall_table[MAX_SYSNO] = {
     [SYS_get_device_count] = sys_get_device_count,
     [SYS_get_device] = sys_get_device,
     [SYS_get_process_list] = sys_get_process_list,
-    [SYS_get_physical_address] = sys_get_physical_address};
+    [SYS_get_physical_address] = sys_get_physical_address,
+    [SYS_is_dirty] = sys_is_dirty,
+    [SYS_pageref] = sys_pageref};
 
 /*
  * 概述：

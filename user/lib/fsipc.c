@@ -1,13 +1,18 @@
-#include "error.h"
-#include "fs.h"
-#include "mmu.h"
 #include <env.h>
+#include <error.h>
+#include <fs.h>
 #include <fsreq.h>
 #include <lib.h>
+#include <mmu.h>
+#include <process.h>
 
 #define debug 0
 
 u_char fsipcbuf[PAGE_SIZE] __attribute__((aligned(PAGE_SIZE)));
+
+static uint32_t fs_service_envid = 0;
+
+static void set_fs_service_envid();
 
 // Overview:
 //  Send an IPC request to the file server, and wait for a reply.
@@ -22,11 +27,22 @@ u_char fsipcbuf[PAGE_SIZE] __attribute__((aligned(PAGE_SIZE)));
 // Returns:
 //  0 if successful,
 //  < 0 on failure.
-static int fsipc(u_int type, void *fsreq, void *dstva, u_int *perm) {
-    u_int whom;
-    // Our file system server must be the 2nd env.
-    ipc_send(envs[1].env_id, type, fsreq, PTE_D);
-    return ipc_recv(&whom, dstva, perm);
+static int fsipc(uint32_t type, void *fsreq, void *dstva, uint32_t *perm) {
+    set_fs_service_envid();
+
+    uint32_t whom;
+
+    ipc_send(fs_service_envid, type, fsreq, PTE_V | PTE_RW | PTE_USER);
+
+    uint64_t result = 0;
+
+    int ret = ipc_recv(&whom, &result, dstva, perm);
+
+    if (ret != 0) {
+        user_panic("fsipc: ipc_recv returned %d", ret);
+    }
+
+    return (int)result;
 }
 
 /*
@@ -66,8 +82,8 @@ static int fsipc(u_int type, void *fsreq, void *dstva, u_int *perm) {
  *   - 错误处理链式结构：任一环节失败立即终止并返回错误
  *   - 文件描述符页通过PTE_D|PTE_LIBRARY权限共享，允许跨进程访问
  */
-int fsipc_open(const char *path, u_int omode, struct Fd *fd) {
-    u_int perm;
+int fsipc_open(const char *path, uint32_t omode, struct Fd *fd) {
+    uint32_t perm;
     struct Fsreq_open *req;
 
     req = (struct Fsreq_open *)fsipcbuf;
@@ -112,9 +128,9 @@ int fsipc_open(const char *path, u_int omode, struct Fd *fd) {
  *   - IPC返回的虚拟地址直接暴露缓存页，依赖PTE_LIBRARY实现跨进程共享
  *   - 错误处理立即终止流程，未释放已分配资源
  */
-int fsipc_map(u_int fileid, u_int offset, void *dstva) {
+int fsipc_map(uint32_t fileid, uint32_t offset, void *dstva) {
     int r;
-    u_int perm;
+    uint32_t perm;
     struct Fsreq_map *req;
 
     req = (struct Fsreq_map *)fsipcbuf;
@@ -124,28 +140,9 @@ int fsipc_map(u_int fileid, u_int offset, void *dstva) {
     if ((r = fsipc(FSREQ_MAP, req, dstva, &perm)) < 0) {
         return r;
     }
-    // 实现差异：
-    // ref: https://os.buaa.edu.cn/discussion/440
-    // ref: https://os.buaa.edu.cn/discussion/457
-    // 原实现要求perm = PTE_D | PTE_LIBRARY | PTE_V
-    // 这是依赖于`sys_ipc_try_send`的不正确实现
-    // 具体地，`sys_ipc_try_send`中，通过`page_insert`映射了页
-    // 根据`page_insert`的参考实现，
-    // 其设置标记位为`perm | PTE_C_CACHEABLE | PTE_V`
-    // 而在`sys_ipc_try_send`中，错误地修改目标Env的`env_ipc_perm`字段
-    // 为`perm | PTE_V`
-    // 若修复了`sys_ipc_try_send`的不正确实现，将导致原代码中的下述检查不通过
 
-    /*if ((perm & ~(PTE_D | PTE_LIBRARY | PTE_C_CACHEABLE)) != (PTE_V)) {
-        user_panic("fsipc_map: unexpected permissions %08x for dstva %08x",
-                   perm, dstva);
-    }*/
-
-    // 由于可能影响课上实验评测
-    // 撤销了对`sys_ipc_try_send`的修复以及对本函数的修改
-    // ref: https://os.buaa.edu.cn/discussion/457
-    if ((perm & ~(PTE_D | PTE_LIBRARY)) != (PTE_V)) {
-        user_panic("fsipc_map: unexpected permissions %08x for dstva %08x",
+    if ((perm & ~(PTE_RW | PTE_USER | PTE_LIBRARY)) != (PTE_V)) {
+        user_panic("fsipc_map: unexpected permissions %08x for dstva 0x%016lx",
                    perm, dstva);
     }
 
@@ -172,7 +169,7 @@ int fsipc_map(u_int fileid, u_int offset, void *dstva) {
  * 关键点：
  *   - 文件尺寸扩展时不预分配存储，依赖后续获取/写入操作
  */
-int fsipc_set_size(u_int fileid, u_int size) {
+int fsipc_set_size(uint32_t fileid, uint32_t size) {
     struct Fsreq_set_size *req;
 
     req = (struct Fsreq_set_size *)fsipcbuf;
@@ -200,7 +197,7 @@ int fsipc_set_size(u_int fileid, u_int size) {
  * 关键点：
  *   - 未清除Open结构体，实际文件描述符资源未释放
  */
-int fsipc_close(u_int fileid) {
+int fsipc_close(uint32_t fileid) {
     struct Fsreq_close *req;
 
     req = (struct Fsreq_close *)fsipcbuf;
@@ -226,7 +223,7 @@ int fsipc_close(u_int fileid) {
  * 关键点：
  *   - 脏标记仅影响缓存状态，实际写回依赖同步机制
  */
-int fsipc_dirty(u_int fileid, u_int offset) {
+int fsipc_dirty(uint32_t fileid, uint32_t offset) {
     struct Fsreq_dirty *req;
 
     req = (struct Fsreq_dirty *)fsipcbuf;
@@ -304,3 +301,9 @@ int fsipc_remove(const char *path) {
  *   - 响应延迟：需等待所有I/O完成才发送IPC确认
  */
 int fsipc_sync(void) { return fsipc(FSREQ_SYNC, fsipcbuf, 0, 0); }
+
+static void set_fs_service_envid() {
+    while (fs_service_envid == 0) {
+        fs_service_envid = get_envid("fs");
+    }
+}

@@ -11,9 +11,11 @@ link_script             := kernel.lds
 driver_dir				:= driver
 
 modules                 := lib init kern
-targets                 := $(mos_elf)
+targets                 := $(mos_elf) fs-image
 
-user_modules			:= user/bare user
+user_modules			:= user/bare user fs
+
+user_disk               := $(target_dir)/fs.img
 
 ifneq ($(prog),)
 dbg_elf                 := -ex "add-symbol-file $(prog)"
@@ -27,7 +29,7 @@ modules                 += driver
 
 CFLAGS                  += -DLAB=$(shell echo $(lab) | cut -f1 -d_)
 QEMU_FLAGS              += -machine virt -m 2G -nographic \
-						-drive file=rootfs.img,format=raw,if=none,id=hd0 -device virtio-blk-device,drive=hd0 \
+						-drive file=$(user_disk),format=raw,if=none,id=hd0 -device virtio-blk-device,drive=hd0 \
 						-no-reboot -monitor telnet:127.0.0.1:23334,server,nowait \
 						-global virtio-mmio.force-legacy=false
 

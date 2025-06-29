@@ -63,6 +63,7 @@ void riscv64_init(u_reg_t hart_id, void *dtb_address) {
 
     ENV_CREATE_NAME("serial", user_serial);
     ENV_CREATE_NAME("virtio", user_virtio);
+    ENV_CREATE_NAME("fs", fs_serv);
     ENV_CREATE_NAME("serial_test", user_serialtest);
     ENV_CREATE_NAME("virtio_test", user_virtiotest);
     ENV_CREATE_NAME("process_test", user_processtest);

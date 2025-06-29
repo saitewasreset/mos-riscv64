@@ -6,7 +6,12 @@
 #define debug 0
 
 #define MAXFD 32
-#define FILEBASE 0x60000000
+#define FILEBASE 0x60000000ULL
+
+// 4KB
+#define PTMAP P3MAP
+// 4MB
+#define PDMAP (2 * P2MAP)
 
 // 开始存储本进程的文件描述符表的内存地址：[0x5FC0 0000, 0x6000 0000)，共4MB
 // 每个文件描述符将占用1页（4KB）
@@ -28,32 +33,33 @@ struct Dev;
 struct Dev {
     int dev_id;
     char *dev_name;
-    int (*dev_read)(struct Fd *fd, void *buf, u_int n, u_int offset);
-    int (*dev_write)(struct Fd *fd, const void *buf, u_int n, u_int offset);
+    int (*dev_read)(struct Fd *fd, void *buf, uint32_t n, uint32_t offset);
+    int (*dev_write)(struct Fd *fd, const void *buf, uint32_t n,
+                     uint32_t offset);
     int (*dev_close)(struct Fd *fd);
     int (*dev_stat)(struct Fd *fd, struct Stat *p_stat);
-    int (*dev_seek)(struct Fd *fd, u_int target_offset);
+    int (*dev_seek)(struct Fd *fd, uint32_t target_offset);
 };
 
 // file descriptor
 struct Fd {
-    u_int fd_dev_id;
-    u_int fd_offset;
-    u_int fd_omode;
+    uint32_t fd_dev_id;
+    uint32_t fd_offset;
+    uint32_t fd_omode;
 };
 
 // State
 struct Stat {
     char st_name[MAXNAMELEN];
-    u_int st_size;
-    u_int st_isdir;
+    uint32_t st_size;
+    uint32_t st_isdir;
     struct Dev *st_dev;
 };
 
 // file descriptor + file
 struct Filefd {
     struct Fd f_fd;
-    u_int f_fileid;
+    uint32_t f_fileid;
     struct File f_file;
 };
 

@@ -3,11 +3,6 @@
 
 #include <stdint.h>
 
-typedef unsigned char u_char;
-typedef unsigned short u_short;
-typedef unsigned int u_int;
-typedef unsigned long u_long;
-
 // File nodes (both in-memory and on-disk)
 
 // Bytes per file system block - same as page size

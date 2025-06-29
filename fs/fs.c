@@ -9,7 +9,7 @@ struct Super *super; // 由`read_super`函数设置
 uint32_t *bitmap; // 由`read_bitmap`函数设置
 
 void file_flush(struct File *);
-int block_is_free(u_int);
+int block_is_free(uint32_t);
 
 /*
  * 概述：
@@ -34,7 +34,7 @@ int block_is_free(u_int);
  *   若blockno超过最大支持块号（DISKMAX/BLOCK_SIZE=1GB/4KB=262144），
  *   会导致虚拟地址越界访问
  */
-void *disk_addr(u_int blockno) {
+void *disk_addr(uint32_t blockno) {
     /* Exercise 5.6: Your code here. */
 
     return (void *)(size_t)(DISKMAP + blockno * BLOCK_SIZE);
@@ -42,10 +42,9 @@ void *disk_addr(u_int blockno) {
 
 /*
  * 概述：
- *   检查虚拟地址是否已建立有效页表映射。通过PTE_V标志位判断。
+ *   检查虚拟地址是否已建立有效页表映射。通过系统调用获取物理地址判断。
  *
  * Precondition：
- *   - 依赖全局页目录vpd和页表vpt的只读访问
  *   - 若`va = NULL`，也能得到正确结果（依赖UTEMP下页面未映射）
  *
  * Postcondition：
@@ -53,14 +52,8 @@ void *disk_addr(u_int blockno) {
  *
  * 副作用：
  *   无副作用
- *
- * 关键点：
- *   - 需同时验证页目录项和页表项的PTE_V位
- *   - 使用VPN/PDX宏进行页表索引计算
  */
-int va_is_mapped(void *va) {
-    return (vpd[PDX(va)] & PTE_V) && (vpt[VPN(va)] & PTE_V);
-}
+int va_is_mapped(void *va) { return (syscall_get_physical_address(va) != 0); }
 
 /*
  * 概述：
@@ -69,7 +62,6 @@ int va_is_mapped(void *va) {
  * Precondition：
  *   - blockno必须为合法磁盘块号
  *   - 依赖全局DISKMAP地址空间布局
- *   - 依赖页表结构vpd/vpt的只读访问
  *
  * Postcondition：
  *   - 返回映射的虚拟地址（若PTE_V位有效）
@@ -82,7 +74,7 @@ int va_is_mapped(void *va) {
  *   - 同时检查页目录项和页表项的PTE_V位，确保完整映射路径有效
  *   - 通过disk_addr计算虚拟地址，依赖线性映射规则
  */
-void *block_is_mapped(u_int blockno) {
+void *block_is_mapped(uint32_t blockno) {
     void *va = disk_addr(blockno);
     if (va_is_mapped(va)) {
         return va;
@@ -92,33 +84,26 @@ void *block_is_mapped(u_int blockno) {
 
 /*
  * 概述：
- *   检查虚拟地址对应的页是否标记为脏（已修改）。通过PTE_DIRTY标志位判断。
+ *   检查虚拟地址对应的页是否标记为脏（已修改）。通过系统调用、页面DIRTY位判断。
  *
  * Precondition：
- *   - va必须已建立有效映射（需先调用va_is_mapped验证）
- *   - 依赖全局页表vpt的只读访问
+ *   - 无
  *
  * Postcondition：
- *   - 返回非零值表示脏页，0表示干净页
+ *   - 返回非零值表示脏页，0表示干净页或未映射
  *
  * 副作用：
  *   无副作用
- *
- * 关键点：
- *   - PTE_DIRTY位实际为软件标志位
- *   - 不验证地址有效性，调用前需确保va已映射
  */
-int va_is_dirty(void *va) { return vpt[VPN(va)] & PTE_DIRTY; }
+int va_is_dirty(void *va) { return syscall_is_dirty(va); }
 
 /*
  * 概述：
  *   检查磁盘块是否为脏状态。通过查询对应虚拟地址的页表项PTE_DIRTY标志实现，
- *   结合映射状态判断，确保仅对已映射块进行脏页检测。
  *
  * Precondition：
  *   - blockno必须为合法磁盘块号（0 <= blockno < DISKMAX/BLOCK_SIZE）
  *   - blockno可以是**已映射**或**未映射**的磁盘块号
- *   - 依赖全局页表结构（vpt/vpd）的只读访问
  *
  * Postcondition：
  *   - 返回非零值表示块已映射且为脏状态
@@ -126,14 +111,10 @@ int va_is_dirty(void *va) { return vpt[VPN(va)] & PTE_DIRTY; }
  *
  * 副作用：
  *   无副作用，仅进行状态查询
- *
- * 关键点：
- *   - 必须同时验证映射状态和脏标志，避免访问未映射地址
- *   - PTE_DIRTY位实际为软件标志位
  */
-int block_is_dirty(u_int blockno) {
+int block_is_dirty(uint32_t blockno) {
     void *va = disk_addr(blockno);
-    return va_is_mapped(va) && va_is_dirty(va);
+    return va_is_dirty(va);
 }
 
 /*
@@ -151,7 +132,7 @@ int block_is_dirty(u_int blockno) {
  * 副作用：
  *   - 通过系统调用改变内存映射属性，影响进程页表结构
  */
-int dirty_block(u_int blockno) {
+int dirty_block(uint32_t blockno) {
     void *va = disk_addr(blockno);
 
     if (!va_is_mapped(va)) {
@@ -162,7 +143,7 @@ int dirty_block(u_int blockno) {
         return 0;
     }
 
-    return syscall_mem_map(0, va, 0, va, PTE_D | PTE_DIRTY);
+    return syscall_mem_map(0, va, 0, va, PTE_V | PTE_RW | PTE_USER | PTE_DIRTY);
 }
 
 /*
@@ -174,26 +155,25 @@ int dirty_block(u_int blockno) {
  *   - blockno必须已被映射到缓存（通过block_is_mapped验证）
  *
  * Postcondition：
- *   - 块数据通过IDE接口写回磁盘，物理存储更新
+ *   - 块数据通过VirtIO接口写回磁盘，物理存储更新
  *   - 若块未映射，触发user_panic
  *
  * 副作用：
  *   - 修改磁盘物理存储内容
- *   - 调用ide_write导致IDE控制器状态变化
  *
  * 关键点：
  *   - 必须确保块已映射，否则直接终止进程
  */
-void write_block(u_int blockno) {
+void write_block(uint32_t blockno) {
     // Step 1: detect is this block is mapped, if not, can't write it's data to
     // disk.
     if (!block_is_mapped(blockno)) {
         user_panic("write unmapped block %08x", blockno);
     }
 
-    // Step2: write data to IDE disk. (using ide_write, and the diskno is 0)
+    // Step2: write data to block device.
     void *va = disk_addr(blockno);
-    ide_write(0, blockno * SECT2BLK, va, SECT2BLK);
+    sector_write(blockno * SECT2BLK, va, SECT2BLK);
 }
 
 /*
@@ -220,7 +200,7 @@ void write_block(u_int blockno) {
  *
  * 副作用：
  *   - 可能分配物理页并建立映射（页表修改）
- *   - 调用ide_read读取磁盘数据，改变设备状态
+ *   - 调用sector_read读取磁盘数据，改变设备状态
  *   - 设置isnew标志影响上层缓存管理逻辑
  *
  * 潜在问题：
@@ -228,7 +208,7 @@ void write_block(u_int blockno) {
  *   空闲检查，直接分配缓存并从磁盘读取。这是为了在读取超级块、空闲块位图
  *   时也能使用该函数。但这或许不是最好的实现方式（？）
  */
-int read_block(u_int blockno, void **blk, u_int *isnew) {
+int read_block(uint32_t blockno, void **blk, uint32_t *isnew) {
     // Step 1: validate blockno. Make file the block to read is within the disk.
     if (super && blockno >= super->s_nblocks) {
         user_panic("reading non-existent block %08x\n", blockno);
@@ -260,8 +240,8 @@ int read_block(u_int blockno, void **blk, u_int *isnew) {
         if (isnew) {
             *isnew = 1;
         }
-        try(syscall_mem_alloc(0, va, PTE_D));
-        ide_read(0, blockno * SECT2BLK, va, SECT2BLK);
+        try(syscall_mem_alloc(0, va, PTE_V | PTE_RW | PTE_USER));
+        sector_read(blockno * SECT2BLK, va, SECT2BLK);
     }
 
     // Step 5: if blk != NULL, assign 'va' to '*blk'.
@@ -274,7 +254,7 @@ int read_block(u_int blockno, void **blk, u_int *isnew) {
 /*
  * 概述：
  *   为磁盘块分配缓存页并建立虚拟内存映射。若块已映射则直接返回，
- *   否则通过系统调用分配物理页，权限设置为可写（PTE_D）。
+ *   否则通过系统调用分配物理页，权限设置为可写（PTE_RW）。
  *
  *   注意，本函数只分配空间，不实际读取磁盘内容。
  *
@@ -298,7 +278,7 @@ int read_block(u_int blockno, void **blk, u_int *isnew) {
  *   - 不处理块内容初始化，依赖后续读写操作填充
  */
 // Checked by DeepSeek-R1 20250508 2149
-int map_block(u_int blockno) {
+int map_block(uint32_t blockno) {
     // Step 1: If the block is already mapped in cache, return 0.
     // Hint: Use 'block_is_mapped'.
     /* Exercise 5.7: Your code here. (1/5) */
@@ -315,7 +295,7 @@ int map_block(u_int blockno) {
 
     va = disk_addr(blockno);
 
-    int r = syscall_mem_alloc(0, va, PTE_D);
+    int r = syscall_mem_alloc(0, va, PTE_V | PTE_RW | PTE_USER);
 
     return r;
 }
@@ -328,7 +308,7 @@ int map_block(u_int blockno) {
  * Precondition：
  *   - blockno必须为合法块号
  *   - blockno可以是**已映射**或**未映射**的磁盘块号
- *   - 依赖页表项PTE_DIRTY标志位（软件）状态
+ *   - 依赖页表项PTE_DIRTY标志位（硬件）状态
  *
  * Postcondition：
  *   - 成功：虚拟地址解除映射，脏数据写回磁盘
@@ -345,7 +325,7 @@ int map_block(u_int blockno) {
  *   - 使用user_assert保证解除映射彻底完成
  */
 // Checked by DeepSeek-R1 20250508 2149
-void unmap_block(u_int blockno) {
+void unmap_block(uint32_t blockno) {
     // Step 1: Get the mapped address of the cache page of this block using
     // 'block_is_mapped'.
     void *va;
@@ -392,7 +372,7 @@ void unmap_block(u_int blockno) {
  *   - 位图索引计算：blockno/32定位到32位整型数组元素
  *   - 位掩码生成：1左移(blockno%32)位实现位级访问
  */
-int block_is_free(u_int blockno) {
+int block_is_free(uint32_t blockno) {
     if (super == 0 || blockno >= super->s_nblocks) {
         return 0;
     }
@@ -432,7 +412,7 @@ int block_is_free(u_int blockno) {
  *   - 直接操作内存映射的位图，未同步回磁盘（由上层逻辑处理）
  */
 // Checked by DeepSeek-R1 20250508 1716
-void free_block(u_int blockno) {
+void free_block(uint32_t blockno) {
     // You can refer to the function 'block_is_free' above.
     // Step 1: If 'blockno' is invalid (0 or >= the number of blocks in
     // 'super'), return.
@@ -451,7 +431,7 @@ void free_block(u_int blockno) {
     // (n % W).
     /* Exercise 5.4: Your code here. (2/2) */
 
-    u_int target_bitmap_block = bitmap[blockno / 32];
+    uint32_t target_bitmap_block = bitmap[blockno / 32];
     target_bitmap_block |= (1 << (blockno % 32));
     bitmap[blockno / 32] = target_bitmap_block;
 }
@@ -622,12 +602,12 @@ void read_super(void) {
  *   - read_block参数blk实际未被利用，通过disk_addr确保块加载
  */
 void read_bitmap(void) {
-    u_int i;
+    uint32_t i;
     void *blk = NULL;
 
     // Step 1: Calculate the number of the bitmap blocks, and read them into
     // memory.
-    u_int nbitmap = super->s_nblocks / BLOCK_SIZE_BIT + 1;
+    uint32_t nbitmap = super->s_nblocks / BLOCK_SIZE_BIT + 1;
     for (i = 0; i < nbitmap; i++) {
         read_block(i + 2, blk, 0);
     }
@@ -776,8 +756,8 @@ void fs_init(void) {
  *   - 可能调用read_block加载间接块到内存，修改缓存映射
  *   - 修改间接块内容（若为新分配块，内容未初始化）
  */
-int file_block_walk(struct File *f, u_int filebno, uint32_t **ppdiskbno,
-                    u_int alloc) {
+int file_block_walk(struct File *f, uint32_t filebno, uint32_t **ppdiskbno,
+                    uint32_t alloc) {
     int r;
     uint32_t *ptr;
     uint32_t *blk;
@@ -849,7 +829,8 @@ int file_block_walk(struct File *f, u_int filebno, uint32_t **ppdiskbno,
  *   - 两阶段操作：先寻址后分配，保证指针有效性
  *   - *diskbno返回实际存储的值，可能为0（未初始化块）需上层处理
  */
-int file_map_block(struct File *f, u_int filebno, u_int *diskbno, u_int alloc) {
+int file_map_block(struct File *f, uint32_t filebno, uint32_t *diskbno,
+                   uint32_t alloc) {
     int r;
     uint32_t *ptr;
 
@@ -907,7 +888,7 @@ int file_map_block(struct File *f, u_int filebno, u_int *diskbno, u_int alloc) {
  *   - 仅清除指针不回收间接块，可能导致间接块内存泄漏（需上层逻辑处理）
  *   - 文件大小未调整可能导致逻辑尾端外内容仍被访问（与块删除不一致）
  */
-int file_clear_block(struct File *f, u_int filebno) {
+int file_clear_block(struct File *f, uint32_t filebno) {
     int r;
     uint32_t *ptr;
 
@@ -953,10 +934,10 @@ int file_clear_block(struct File *f, u_int filebno) {
  *   - 调用read_block分配物理页，修改页表映射
  *   - 可能触发IDE磁盘读取操作，改变设备状态
  */
-int file_get_block(struct File *f, u_int filebno, void **blk) {
+int file_get_block(struct File *f, uint32_t filebno, void **blk) {
     int r;
-    u_int diskbno;
-    u_int isnew;
+    uint32_t diskbno;
+    uint32_t isnew;
 
     // Step 1: find the disk block number is `f` using `file_map_block`.
     if ((r = file_map_block(f, filebno, &diskbno, 1)) < 0) {
@@ -994,9 +975,9 @@ int file_get_block(struct File *f, u_int filebno, void **blk) {
  *   - alloc=0确保不自动分配新块，块不存在时直接传递错误而非静默处理
  *   - 仅设置脏标记，不触发立即写回，依赖后续同步操作持久化
  */
-int file_dirty(struct File *f, u_int offset) {
+int file_dirty(struct File *f, uint32_t offset) {
     int r;
-    u_int diskbno;
+    uint32_t diskbno;
 
     if ((r = file_map_block(f, offset / BLOCK_SIZE, &diskbno, 0)) < 0) {
         return r;
@@ -1029,7 +1010,7 @@ int file_dirty(struct File *f, u_int offset) {
 // Liberty save me!
 int dir_lookup(struct File *dir, char *name, struct File **file) {
     // Step 1: Calculate the number of blocks in 'dir' via its size.
-    u_int nblock;
+    uint32_t nblock;
     /* Exercise 5.8: Your code here. (1/3) */
     nblock = dir->f_size / BLOCK_SIZE;
 
@@ -1100,7 +1081,7 @@ int dir_lookup(struct File *dir, char *name, struct File **file) {
  */
 int dir_alloc_file(struct File *dir, struct File **file) {
     int r;
-    u_int nblock, i, j;
+    uint32_t nblock, i, j;
     void *blk;
     struct File *f;
 
@@ -1393,8 +1374,8 @@ int file_create(char *path, struct File **file) {
  *   - newsize=0的特殊处理：强制new_nblocks=0清空所有块
  *   - 间接块释放条件：仅当新块数<=NDIRECT时回收，避免悬空指针
  */
-void file_truncate(struct File *f, u_int newsize) {
-    u_int bno, old_nblocks, new_nblocks;
+void file_truncate(struct File *f, uint32_t newsize) {
+    uint32_t bno, old_nblocks, new_nblocks;
 
     old_nblocks = ROUND(f->f_size, BLOCK_SIZE) / BLOCK_SIZE;
     new_nblocks = ROUND(newsize, BLOCK_SIZE) / BLOCK_SIZE;
@@ -1452,7 +1433,7 @@ void file_truncate(struct File *f, u_int newsize) {
  *   - 父目录刷新确保目录条目及时更新，但可能引入额外I/O开销
  *   - 函数无条件返回0，错误处理依赖子函数panic机制
  */
-int file_set_size(struct File *f, u_int newsize) {
+int file_set_size(struct File *f, uint32_t newsize) {
     if (f->f_size > newsize) {
         file_truncate(f, newsize);
     }
@@ -1493,9 +1474,9 @@ int file_set_size(struct File *f, u_int newsize) {
  *   - 使用ROUND计算块数（向上取整），包含可能部分使用的最后一字节块
  */
 void file_flush(struct File *f) {
-    u_int nblocks;
-    u_int bno;
-    u_int diskbno;
+    uint32_t nblocks;
+    uint32_t bno;
+    uint32_t diskbno;
     int r;
 
     // ROUND -> ROUND UP
@@ -1577,9 +1558,9 @@ void file_close(struct File *f) {
     // 同步文件内容到磁盘中
     file_flush(f);
     if (f->f_dir) {
-        u_int nblock = f->f_dir->f_size / BLOCK_SIZE;
+        uint32_t nblock = f->f_dir->f_size / BLOCK_SIZE;
         for (int i = 0; i < nblock; i++) {
-            u_int diskbno;
+            uint32_t diskbno;
             struct File *files;
             if (file_map_block(f->f_dir, i, &diskbno, 0) < 0) {
                 debugf("file_close: file_map_block failed\n");

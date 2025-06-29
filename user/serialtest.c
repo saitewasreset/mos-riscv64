@@ -14,7 +14,7 @@ int main(void) {
 
     char buffer[512] = {0};
 
-    debugf("buffer at 0x%016lx\n", buffer);
+    debugf("serialtest: buffer at 0x%016lx\n", buffer);
 
     while (1) {
         while (recv_len == 0) {

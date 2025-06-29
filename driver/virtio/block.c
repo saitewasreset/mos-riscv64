@@ -202,10 +202,6 @@ bool init_block_device(size_t idx, uint32_t interrupt_code) {
 
 void block_cmd(size_t block_device_idx, uint32_t type, uint32_t sector,
                void *data) {
-
-    debugf("block_cmd: block_device_idx = %lu type = %lu sector = %lu data = "
-           "0x%016lx\n",
-           block_device_idx, type, sector, data);
     uint16_t d1, d2, d3;
 
     uint32_t data_mode = 0;

@@ -6,7 +6,7 @@ include $(user_dir)/include.mk
 USERLIB     := $(addprefix $(user_dir)/, $(USERLIB))
 USERAPPS    := $(addprefix $(user_dir)/, $(USERAPPS))
 
-FSLIB       := fs.o ide.o
+FSLIB       := fs.o block.o
 FSIMGFILES  := rootfs/motd rootfs/newmotd
 
 .PRECIOUS: %.b %.b.c
