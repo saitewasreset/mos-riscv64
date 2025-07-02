@@ -3,6 +3,27 @@
 #include <pmap.h>
 #include <printk.h>
 
+void dump_schedule_list(void) {
+    struct Env *cur;
+
+    printk("Dumping schedule list: ");
+
+    uint32_t count = 0;
+
+    TAILQ_FOREACH(cur, &env_sched_list, env_sched_link) {
+        printk("%s ", cur->env_name);
+
+        count++;
+
+        if (count >= 10) {
+            printk("limit_exceed");
+            break;
+        }
+    }
+
+    printk("\n");
+}
+
 /*
  * 概述：
  *   实现时间片轮转调度算法，从可运行环境列表中选择一个环境并使用'env_run'调度运行。
@@ -84,6 +105,7 @@ void schedule(int yield) {
         env_run(nextenv);
     } else {
         count--;
+
         env_run(curenv);
     }
 }

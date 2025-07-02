@@ -85,6 +85,7 @@ void handle_env_interrupt(struct Trapframe *tf, uint32_t interrupt_code) {
         if (env->env_status == ENV_NOT_RUNNABLE) {
             if (env->env_in_syscall == 1) {
                 env->env_in_syscall = 0;
+                env->env_ipc_recving = 0;
 
                 // 将当前系统调用的返回值设置为-E_INTR
                 // 10 -> ra
