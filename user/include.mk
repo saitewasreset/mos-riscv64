@@ -19,7 +19,8 @@ USERLIB              := entry.o \
 			fsipc.o \
 			fd.o \
 			console.o \
-			pipe.o
+			pipe.o \
+			fprintf.o
 
 
 USERLIB := $(addprefix lib/, $(USERLIB)) $(wildcard ../lib/*.o)

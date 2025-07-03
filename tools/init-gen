@@ -5,11 +5,11 @@ for s in "$@"; do
 	name="$(echo "$s/" | cut -f1 -d/)"
 	pri="$(echo "$s/" | cut -f2 -d/)"
 	if [ -z "$name" ]; then
-		out="$out ENV_CREATE($pri);"
+		out="$out ENV_CREATE_NAME(\"$pri\", $pri);"
 	elif [ -z "$pri" ]; then
-		out="$out ENV_CREATE(test_$name);"
+		out="$out ENV_CREATE_NAME(\"test_$name\", test_$name);"
 	else
-		out="$out ENV_CREATE_PRIORITY(test_$name, $pri);"
+		out="$out ENV_CREATE_NAME_PRIORITY(\"test_$name\", test_$name, $pri);"
 	fi
 done
 

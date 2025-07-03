@@ -1,4 +1,5 @@
 #include "../../fs/serv.h"
+#include "fs.h"
 #include <lib.h>
 
 int strecmp(char *a, char *b) {
@@ -21,7 +22,8 @@ void fs_check() {
     u_int *bits;
 
     // back up bitmap
-    if ((r = syscall_mem_alloc(0, (void *)UTEMP, PTE_D)) < 0) {
+    if ((r = syscall_mem_alloc(0, (void *)UTEMP, PTE_V | PTE_RW | PTE_USER)) <
+        0) {
         user_panic("syscall_mem_alloc: %d", r);
     }
 
@@ -56,6 +58,9 @@ void fs_check() {
     }
 
     if (strecmp(blk, msg) != 0) {
+        for (size_t i = 0; i < 32; i++) {
+            debugf("%04lu: %d %c\n", i, ((char *)blk)[i], ((char *)blk)[i]);
+        }
         user_panic("file_get_block returned wrong data");
     }
 

@@ -4,6 +4,7 @@ static char *msg = "This is the NEW message of the day!\n";
 static char *diff_msg = "This is a different message of the day!\n";
 
 int main() {
+    debugf("serve_check: begin\n");
     int r;
     int fdnum;
     char buf[512];
@@ -207,6 +208,5 @@ int main() {
 
     debugf("4 OK\n");
 
-    syscall_read_dev(&r, 0x10000010, 4);
     return 0;
 }

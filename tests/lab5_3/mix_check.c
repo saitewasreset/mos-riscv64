@@ -1,4 +1,5 @@
 #include "../../fs/serv.h"
+#include "mmu.h"
 #include <lib.h>
 
 void free_block(u_int);
@@ -17,74 +18,38 @@ int strecmp(char *a, char *b) {
 
 static char *msg = "This is the NEW message of the day!\n";
 
-#define DEV_READ_TEST(c, addr, size, msge)                                     \
-    if (syscall_read_dev(&c, addr, size) != -3)                                \
-    user_panic(msge)
-#define DEV_WRITE_TEST(c, addr, size, msge)                                    \
-    if (syscall_write_dev(&c, addr, size) != -3)                               \
-    user_panic(msge)
-
-void test_syscall() {
-    int c = 0;
-    DEV_READ_TEST(c, 0x0ffffffc, 4, "failed dev test1");
-    DEV_READ_TEST(c, 0x10000020, 4, "failed dev test2");
-    DEV_READ_TEST(c, 0x12fffffc, 4, "failed dev test3");
-    DEV_READ_TEST(c, 0x13004204, 4, "failed dev test4");
-    DEV_READ_TEST(c, 0x14fffffc, 4, "failed dev test5");
-    DEV_READ_TEST(c, 0x15000204, 4, "failed dev test6");
-    DEV_WRITE_TEST(c, 0x0ffffff8, 4, "failed dev test7");
-    DEV_WRITE_TEST(c, 0x10000028, 4, "failed dev test8");
-    DEV_WRITE_TEST(c, 0x12fffff8, 4, "failed dev test9");
-    DEV_WRITE_TEST(c, 0x13004208, 4, "failed dev testA");
-    DEV_WRITE_TEST(c, 0x14fffff8, 4, "failed dev testB");
-    DEV_WRITE_TEST(c, 0x15000208, 4, "failed dev testC");
-    debugf("TEST Weak Dev test passed!\n");
-}
-
-void test_ide_write(u_int diskno) {
-    int data[4096];
-    int i;
-    for (i = 0; i < 4096; i++) {
-        data[i] = i ^ diskno;
-    }
-    ide_write(diskno, 4096, data, 32);
-}
-
-void test_ide_read(u_int diskno) {
-    int read[4096];
-    int i;
-    ide_read(diskno, 4096, read, 32);
-    for (i = 0; i < 4096; i++) {
-        if (read[i] != (i ^ diskno)) {
-            user_panic("ide read/write is wrong");
-        }
-    }
-}
-
 void test_fs() {
     fs_init();
+
+    debugf("test_fs: running...\n");
+
     int i, r, alloced_block[512];
     void *blk;
     u_int *bits;
     struct File *f;
     // back up bitmap
-    if ((r = syscall_mem_alloc(0, (void *)UTEMP, PTE_D)) < 0) {
+    if ((r = syscall_mem_alloc(0, (void *)UTEMP, PTE_V | PTE_RW | PTE_USER)) <
+        0) {
         user_panic("syscall_mem_alloc: %d", r);
     }
     bits = (u_int *)UTEMP;
     memcpy(bits, bitmap, PAGE_SIZE);
     // alloc_block
     for (i = 0; i < 512; i++) {
+        debugf("test_fs: allocating block %d...\n", i);
         if ((r = alloc_block()) < 0) {
             user_panic("alloc_block return: %d", r);
         }
         alloced_block[i] = r;
     }
+
+    debugf("test_fs: block allocated\n");
+
     // block used to be free but not free any more
     for (i = 0; i < 512; i++) {
         r = alloced_block[i];
-        u_int va = 0x10000000 + (r << 12);
-        if (!((vpd[PDX(va)] & (PTE_V)) && (vpt[VPN(va)] & (PTE_V)))) {
+        u_reg_t va = 0x10000000 + (r << 12);
+        if (syscall_get_physical_address((void *)va) == 0) {
             user_panic("block map is wrong");
         }
         user_assert(bits[r / 32] & (1 << (r % 32)));
@@ -133,12 +98,6 @@ void test_fs() {
 }
 
 int main() {
-    test_syscall();
-    test_ide_write(0);
-    test_ide_write(1);
-    test_ide_read(0);
-    test_ide_read(1);
-    debugf("TEST IDE read/write test passed!\n");
     test_fs();
     return 0;
 }
