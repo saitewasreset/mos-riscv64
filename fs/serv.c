@@ -525,7 +525,7 @@ void serve(void) {
     for (;;) {
         perm = 0;
 
-        int ret = ipc_recv(&whom, &req, (void *)REQVA, &perm);
+        int ret = ipc_recv(0, &whom, &req, (void *)REQVA, &perm);
 
         if (ret != 0) {
             if (ret == -E_INTR) {
@@ -568,8 +568,12 @@ int main() {
 
     debugf("fs: FS is running\n");
 
+    debugf("fs: serve init\n");
     serve_init();
+    debugf("fs: serve init done\n");
+    debugf("fs: fs init\n");
     fs_init();
+    debugf("fs: fs init done\n");
 
     debugf("fs: WE SHALL NEVER SURRENDER!\n");
 

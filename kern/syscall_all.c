@@ -732,7 +732,7 @@ void sys_panic(char *msg) {
  * - 通过系统调用返回值寄存器(v0)设置返回值为0
  */
 // Checked by DeepSeek-R1 20250424 13:28
-int sys_ipc_recv(uint32_t dstva) {
+int sys_ipc_recv(uint32_t dstva, uint32_t from) {
     /* Step 1: Check if 'dstva' is either zero or a legal address. */
     if (dstva != 0 && is_illegal_va(dstva)) {
         return -E_INVAL;
@@ -747,6 +747,8 @@ int sys_ipc_recv(uint32_t dstva) {
     /* Exercise 4.8: Your code here. (2/8) */
 
     curenv->env_ipc_dstva = dstva;
+
+    curenv->env_ipc_recv_from = from;
 
     /* Step 4: Set the status of 'curenv' to 'ENV_NOT_RUNNABLE' and remove it
      * from 'env_sched_list'. */
@@ -830,6 +832,12 @@ int sys_ipc_try_send(uint32_t envid, uint64_t value, u_reg_t srcva,
 
     if (e->env_ipc_recving == 0) {
         return -E_IPC_NOT_RECV;
+    }
+
+    if (e->env_ipc_recv_from != 0) {
+        if (e->env_ipc_recv_from != curenv->env_id) {
+            return -E_IPC_NOT_RECV;
+        }
     }
 
     // 此处清除了`perm`的高20位，以满足`page_insert`的Precondition
@@ -1271,6 +1279,7 @@ int sys_is_dirty(u_reg_t va) {
 }
 
 int sys_pageref(u_reg_t va) {
+
     if (curenv == NULL) {
         panic("sys_get_physical_address called while curenv is NULL");
     }
@@ -1278,6 +1287,7 @@ int sys_pageref(u_reg_t va) {
     struct Page *page = page_lookup(curenv->env_pgdir, va, NULL);
 
     if (page != NULL) {
+
         return (int)(page->pp_ref);
     }
 

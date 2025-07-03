@@ -200,7 +200,7 @@ int main(void) {
     void (*func)(uint32_t whom, struct SerialReqPayload *payload) = NULL;
 
     while (1) {
-        int ret = ipc_recv(&whom, &val, (void *)REQVA, &perm);
+        int ret = ipc_recv(0, &whom, &val, (void *)REQVA, &perm);
 
         if (ret != 0) {
             if (ret == -E_INTR) {

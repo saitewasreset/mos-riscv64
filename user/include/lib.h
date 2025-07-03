@@ -495,7 +495,7 @@ int syscall_ipc_try_send(uint32_t envid, uint64_t value, const void *srcva,
  * - 修改当前进程的IPC相关字段
  * - 通过系统调用返回值寄存器(v0)设置返回值为0
  */
-int syscall_ipc_recv(void *dstva);
+int syscall_ipc_recv(void *dstva, uint32_t from);
 int syscall_cgetc(void);
 /*
  * 概述：
@@ -579,7 +579,8 @@ int syscall_is_dirty(void *va);
 
 // ipc.c
 int ipc_send(uint32_t whom, uint64_t val, const void *srcva, uint32_t perm);
-int ipc_recv(uint32_t *whom, uint64_t *out_val, void *dstva, uint32_t *perm);
+int ipc_recv(uint32_t from, uint32_t *whom, uint64_t *out_val, void *dstva,
+             uint32_t *perm);
 
 // wait.c
 void wait(uint32_t envid);

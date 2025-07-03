@@ -266,13 +266,19 @@ int main(void) {
     void (*func)(uint32_t whom, struct VirtIOReqPayload *payload) = NULL;
 
     while (1) {
+        while (in_progress) {
+        }
 
-        int ret = ipc_recv(&whom, &val, (void *)REQVA, &perm);
+        int ret = ipc_recv(0, &whom, &val, (void *)REQVA, &perm);
+
+        in_progress = true;
 
         if (ret != 0) {
             if (ret == -E_INTR) {
+                in_progress = false;
                 continue;
             } else {
+                in_progress = false;
                 debugf("virtio: failed to receive request: %d\n", ret);
             }
         }
@@ -284,6 +290,8 @@ int main(void) {
 
             panic_on(syscall_mem_unmap(0, (void *)REQVA));
 
+            in_progress = false;
+
             continue;
         }
 
@@ -291,6 +299,8 @@ int main(void) {
             debugf("virtio: invalid request from %08x: no argument page\n",
                    whom);
             ipc_send(whom, (uint64_t)-VIRTIOREQ_NO_PAYLOAD, NULL, 0);
+
+            in_progress = false;
             continue;
         }
 
@@ -301,10 +311,7 @@ int main(void) {
 }
 
 static void serve_read(uint32_t whom, struct VirtIOReqPayload *payload) {
-    while (in_progress) {
-    }
 
-    in_progress = true;
     req_whom = whom;
     req_type = VIRTIO_BLK_T_IN;
 
@@ -312,10 +319,6 @@ static void serve_read(uint32_t whom, struct VirtIOReqPayload *payload) {
 }
 
 static void serve_write(uint32_t whom, struct VirtIOReqPayload *payload) {
-    while (in_progress) {
-    }
-
-    in_progress = true;
     req_whom = whom;
     req_type = VIRTIO_BLK_T_OUT;
 
@@ -323,21 +326,36 @@ static void serve_write(uint32_t whom, struct VirtIOReqPayload *payload) {
 }
 
 void notify_sender(bool success) {
+    int ret = 0;
+
     if (in_progress == false) {
         user_panic("notify_sender called while in_process == false");
     }
 
+    u_reg_t pa = syscall_get_physical_address((void *)REQVA);
+
+    uint32_t data_head = *(uint32_t *)REQVA;
+
     if (!success) {
-        ipc_send(req_whom, (uint64_t)-VIRTIOREQ_IOERROR, 0, 0);
+        ret =
+            syscall_ipc_try_send(req_whom, (uint64_t)-VIRTIOREQ_IOERROR, 0, 0);
     } else {
         if (req_type == VIRTIO_BLK_T_IN) {
-            ipc_send(req_whom, VIRTIOREQ_SUCCESS, (void *)REQVA,
-                     PTE_V | PTE_RW | PTE_USER);
+
+            ret =
+                syscall_ipc_try_send(req_whom, VIRTIOREQ_SUCCESS, (void *)REQVA,
+                                     PTE_V | PTE_RW | PTE_USER);
         } else if (req_type == VIRTIO_BLK_T_OUT) {
-            ipc_send(req_whom, VIRTIOREQ_SUCCESS, 0, 0);
+            ret = syscall_ipc_try_send(req_whom, VIRTIOREQ_SUCCESS, 0, 0);
         }
     }
 
+    if (ret != 0) {
+        debugf("notify_sender: to: [%08x] ipc try send failed: %d\n", req_whom,
+               ret);
+    }
+
     in_progress = false;
+
     panic_on(syscall_mem_unmap(0, (void *)REQVA));
 }

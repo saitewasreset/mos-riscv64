@@ -30,16 +30,18 @@ static void set_fs_service_envid();
 static int fsipc(uint32_t type, void *fsreq, void *dstva, uint32_t *perm) {
     set_fs_service_envid();
 
+    uint32_t self = syscall_getenvid();
+
     uint32_t whom;
 
     ipc_send(fs_service_envid, type, fsreq, PTE_V | PTE_RW | PTE_USER);
 
     uint64_t result = 0;
 
-    int ret = ipc_recv(&whom, &result, dstva, perm);
+    int ret = ipc_recv(fs_service_envid, &whom, &result, dstva, perm);
 
     if (ret != 0) {
-        user_panic("fsipc: ipc_recv returned %d", ret);
+        user_panic("fsipc: [%08x] ipc_recv returned %d", self, ret);
     }
 
     return (int)result;
@@ -304,6 +306,6 @@ int fsipc_sync(void) { return fsipc(FSREQ_SYNC, fsipcbuf, 0, 0); }
 
 static void set_fs_service_envid() {
     while (fs_service_envid == 0) {
-        fs_service_envid = get_envid("fs");
+        fs_service_envid = get_envid("fs_serv");
     }
 }

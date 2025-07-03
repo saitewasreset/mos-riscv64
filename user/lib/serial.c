@@ -29,7 +29,8 @@ size_t serial_read(char *buf, size_t len) {
     uint32_t whom = 0;
     uint32_t perm = 0;
 
-    ipc_recv(&whom, &actual_read, (void *)serialipcbuf, &perm);
+    ipc_recv(serial_service_envid, &whom, &actual_read, (void *)serialipcbuf,
+             &perm);
 
     memcpy((void *)buf, (const void *)serialipcbuf, actual_read);
 
@@ -54,7 +55,7 @@ int serial_write(const char *buf, size_t len) {
     uint64_t val = 0;
     uint32_t whom = 0;
 
-    return (int)ipc_recv(&whom, &val, NULL, 0);
+    return (int)ipc_recv(serial_service_envid, &whom, &val, NULL, 0);
 }
 
 static void set_serial_service_envid() {

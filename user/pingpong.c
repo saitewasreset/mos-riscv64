@@ -14,7 +14,7 @@ int main() {
 
     for (;;) {
         debugf("%x am waiting.....\n", syscall_getenvid());
-        ipc_recv(&who, &i, 0, 0);
+        ipc_recv(0, &who, &i, 0, 0);
 
         debugf("%x got %d from %x\n", syscall_getenvid(), i, who);
 

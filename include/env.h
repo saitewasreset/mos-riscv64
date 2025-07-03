@@ -67,6 +67,9 @@ struct Env {
     uint64_t env_ipc_dstva;
     // 传递的页面的权限位
     uint32_t env_ipc_perm;
+    // 要从哪个环境接收
+    // 0 表示任意环境
+    uint32_t env_ipc_recv_from;
 
     // Lab 4 fault handling
     uint64_t env_user_tlb_mod_entry; // userspace TLB Mod handler

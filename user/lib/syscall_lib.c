@@ -49,7 +49,9 @@ int syscall_ipc_try_send(uint32_t envid, uint64_t value, const void *srcva,
     return msyscall(SYS_ipc_try_send, envid, value, srcva, perm);
 }
 
-int syscall_ipc_recv(void *dstva) { return msyscall(SYS_ipc_recv, dstva); }
+int syscall_ipc_recv(void *dstva, uint32_t from) {
+    return msyscall(SYS_ipc_recv, dstva, from);
+}
 
 int syscall_cgetc() { return msyscall(SYS_cgetc); }
 
@@ -97,4 +99,4 @@ u_reg_t syscall_get_physical_address(void *va) {
 
 int syscall_is_dirty(void *va) { return msyscall(SYS_is_dirty, (u_reg_t)va); }
 
-int syscall_pageref(void *va) { return msyscall(SYS_is_dirty, (u_reg_t)va); }
+int syscall_pageref(void *va) { return msyscall(SYS_pageref, (u_reg_t)va); }
